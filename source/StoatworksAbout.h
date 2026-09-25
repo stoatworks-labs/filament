@@ -17,7 +17,7 @@ namespace stoatworks::about
     inline constexpr auto slug = "filament";
     inline constexpr auto hook = "A wall of incandescent bulbs, for Resolume";
     inline constexpr auto licence = "MIT";
-    inline constexpr auto guide = "";
+    inline constexpr auto guide = "https://stoatworks-labs.com/software/filament/guide/";
     inline constexpr auto page = "https://stoatworks-labs.com/software/filament/";
     inline constexpr auto repo = "https://github.com/stoatworks-labs/filament";
     inline constexpr auto versionFallback = "v0.1.0";
