@@ -270,6 +270,54 @@ compares against the waveform. Reverted with `git checkout source/Shaders.cpp`, 
 
 ---
 
+## The browser demo
+
+`demo/` is the page at **filament-demo.stoatworks-labs.com** (2026-09-25), on the
+fleet's kit (`stoatworks-backend/resolume-demo`, vendored by its `sync.sh`).
+
+**What is the plugin's.** Every GLSL string of `Shaders.cpp` — the version line, the
+vertex body, `kFilament` and the six pass bodies — is spliced into `demo/plugin.js` by
+`demo/tools/sync_shaders.py`, tabs and comments included, and assembled as `assemble`
+does. So the ODE runs on the GPU as it does here: RK4 substeps, the resistivity table,
+c_p, `sinPi`, the waveform through the dimmer law and the Planck lookup, over two
+ping-ponged RGBA32F state buffers, the thermal pass writing its two render targets
+(WebGL2 needs `EXT_color_buffer_float` for that, and the page refuses to start without
+it or without a complete two-target framebuffer, rather than fake it). The same script
+copies Lamp.h's constants and tables, Model.h's, the control ranges, option lists and
+glass tints, and the 346 rows of `PlanckTable.h`. `demo/tools/check_shaders.py` holds
+all of it to the C++ character for character and `tools/verify.sh` runs it; a shader
+change here means re-running the sync script, never an edit of the page.
+
+**What is a hand port, checked by nobody but a reader:** Controls.cpp's laws, Lamp.cpp's
+`Resistivity`, `HeatCapacity`, `MainsVolts`, `Make` (the wire), `Derivative` and
+`Stiffness`, and from `ProcessOpenGL` the clock (dt clamped to [0, 0.25 s], the nominal
+first frame), the mains phase reduced in double, the substep rule, the lamp cache, the
+fill, the regrid and the pass order. Change one of those here and change the page by hand.
+The page says so in its banner and disclosure, and says the three constants (0.30, one
+half, 15%) are assumptions.
+
+**What differs, each said on the page:** the clock is the kit's (no unit vote; a paused
+page renders dt = 0 frames, the instant's light, as for a stopped host clock; Restart is a
+backward clock, which the dt clamp reads as 0 s, so the wall keeps its temperatures);
+Columns and Rows are dropdowns (no integer control in the kit); no About block; `Perturb`
+and `Probe` are 0; the kit caps one frame at 0.1 s.
+
+**Measured once (2026-09-25).** The page driven frame by frame at n / 60 from a fresh
+instance (`window.__filamentDemo.hooks`: `fresh()`, and `afterRender` to read the canvas
+inside the frame) on the Colour bars clip at 960x540, against `fitest --pipe --fps 60` on
+the same 31 input frames read back from the page: at frames 1, 5 and 30, and for 1000 W,
+10 W on a triac, RGB gels behind frosted glass at 64x32, and Pixel Mode at 60 Hz +1.6
+stops, every pixel within 1/255. Through ANGLE on Metal, 1 to 3 channel values of
+1.56 million differ, by 1; through SwiftShader, up to 11 235, by 1. The Wattage control
+moves the picture (frame 5, 40 W against 1000 W: mean |difference| 41 levels).
+
+Deploy: `cf-run npx wrangler deploy` from the repo root, or push to main
+(`.github/workflows/deploy.yml`). The host is a Worker **route** over a proxied
+`AAAA 100::` record made through the API on 2026-09-25, not a custom domain: the zone
+is at Cloudflare's limit of 100. Delete that record and the page goes dark while deploys
+stay green. Verify by content:
+`curl -s 'https://filament-demo.stoatworks-labs.com/?cb=1' | grep -o '<title>[^<]*'`.
+
 ## Decisions taken without asking
 
 - **The resistivity table** is Forsythe and Worthing (1925) as widely reproduced; the copy
@@ -361,7 +409,7 @@ at 320x180 and 1280x720 and on the software renderer.
   a 27-pixel cell, and red has a luma of 0.21.
 - **The clock-unit voting** is readout's, which has met Arena; this plugin has not.
 - **Not verified at 4K**, only benchmarked there.
-- **No user guide, browser demo, OpenFX port, factory presets or seed.**
+- **No user guide, OpenFX port, factory presets or seed.**
 
 ---
 

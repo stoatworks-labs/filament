@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Filament — browser demo | Stoatworks Labs</title>
+    <meta name="description" content="Try the Filament FFGL plugin for Resolume in your browser: the picture on a wall of incandescent bulbs, each a tungsten filament with its own heat balance. The plugin's own drive, thermal, bloom and output shaders ported to WebGL2, so the filaments' ODE runs on your GPU; the clock, the lamp sizing, the substep rule and the control laws are a hand port to JavaScript." />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./vendor/kit.css" />
+    <link rel="canonical" href="https://filament-demo.stoatworks-labs.com/" />
+  </head>
+  <body>
+    <main id="demo">
+      <noscript>
+        <p>
+          This demo runs the plugin's shaders in your browser, so it needs
+          JavaScript and WebGL2. The plugin itself, its source and its downloads
+          are on
+          <a href="https://github.com/stoatworks-labs/filament">its repository</a>.
+        </p>
+      </noscript>
+    </main>
+
+    <script type="module" src="./plugin.js"></script>
+    <script
+      src="./vendor/support-footer.js"
+      defer
+      data-app="Filament"
+      data-repo="https://github.com/stoatworks-labs/filament"
+      data-note="A browser demo of the plugin's shaders and a port of its clock, its lamp sizing, its substep rule and its control laws. Nothing you load here leaves your machine."
+    ></script>
+  </body>
+</html>

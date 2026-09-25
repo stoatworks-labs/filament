@@ -130,7 +130,23 @@ depending on the lamp; small lamps need the most.
 
 - **Never loaded into Resolume**, and never built on Windows.
 - Seen only on Resolume's bundled demo clips, never on camera footage.
-- No user guide, no browser demo, no OpenFX port, no factory presets.
+- No user guide, no OpenFX port, no factory presets.
+
+## Browser demo
+
+[filament-demo.stoatworks-labs.com](https://filament-demo.stoatworks-labs.com/)
+runs the plugin's own shaders in WebGL2 — the drive, thermal, bloom and output
+passes and the filament library they share — spliced in from `source/Shaders.cpp`
+by `demo/tools/sync_shaders.py` and checked character for character, with the
+lamp's tables and the Planck table, by `demo/tools/check_shaders.py` from
+`tools/verify.sh`. So the heat balance runs on the GPU as in the plugin: RK4
+substeps over a float temperature per bulb, ping-ponged. Its CPU half — the clock
+and the mains phase, the lamp's wire sized from its wattage, the substep rule and
+every control's law — is a **hand port to JavaScript**, and nothing checks a port
+but a reader; the emissivity, the radiating fraction and the conducted share are
+the plugin's assumptions there as here. Columns and Rows are dropdowns (the kit
+has no integer control). It is served from `demo/` by this repo's own Worker and
+redeploys on every push to main.
 
 ## Build
 
