@@ -183,3 +183,7 @@ traps, and where every tolerance comes from.
 MIT — see [LICENSE](LICENSE). The CIE 1931 colour-matching functions, the tungsten
 resistivity table and the heat-capacity fit are published data; their sources are in
 [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
+<!-- attributions:start -->
+This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+<!-- attributions:end -->
