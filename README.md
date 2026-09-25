@@ -14,8 +14,9 @@
 > triac-dimmed filament ripples at exactly twice the mains, seven times more on a 25 W
 > lamp than a 500 W one; and a resize mid-fade keeps every temperature exactly — with six
 > negative controls that prove each check can fail. It has **never been loaded into
-> Resolume**; it is loaded by [oxbow](https://github.com/stoatworks-labs/oxbow), which is
-> a real FFGL host and is not Resolume. See [Status](#status).
+> Resolume on macOS**; there it is loaded by [oxbow](https://github.com/stoatworks-labs/oxbow),
+> which is a real FFGL host and is not Resolume. On Windows it passes the fleet's Arena
+> gate in Resolume Arena 7.27.1 on software rendering. See [Status](#status).
 
 The picture on a wall of incandescent bulbs, as an FFGL effect for
 [Resolume](https://resolume.com) Arena and Avenue.
@@ -85,7 +86,9 @@ wall paints the whole frame, whatever the clip's alpha.
 
 ## Status
 
-**v0.1.0, unreleased, and honestly early — 25 September 2026.**
+**v0.1.0, released 25 September 2026, and honestly early.** There is a
+[user guide](https://stoatworks-labs.com/software/filament/guide/)
+([PDF](docs/USER-GUIDE.pdf)) and a [project page](https://stoatworks-labs.com/software/filament/).
 
 ### Measured offline, on macOS
 
@@ -126,11 +129,24 @@ Render cost, `fitest --bench` (best of three, `glFinish` both sides, a shared GP
 (percentages of a 60 fps frame). The equation is solved in 34 to 147 substeps a frame,
 depending on the lamp; small lamps need the most.
 
+### In Resolume Arena, on Windows
+
+On Windows it has: a build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
+
+### What filming the release video found
+
+The video is rendered through `fitest --pipe` over Resolume's demo clips. Filming found no
+defect, and four facts now in the guide: a 1000 W wall barely registers a quick flash (the
+wall's mean moved 43 → 55 across a flash that takes the 40 W wall 30 → 97) and glows on after
+it; a Linear dimmer leaves only the highlights (a face's mean 52 → 25); behind RGB gels the
+blue is nearly dark; and the mains ripple is averaged away by a 30 fps shutter, so the video
+does not show it (the harness measures it).
+
 ### Not done
 
-- **Never loaded into Resolume**, and never built on Windows.
+- **Never loaded into Resolume on macOS.**
 - Seen only on Resolume's bundled demo clips, never on camera footage.
-- No user guide, no OpenFX port, no factory presets.
+- No OpenFX port, no factory presets.
 
 ## Browser demo
 

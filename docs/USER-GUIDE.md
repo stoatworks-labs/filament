@@ -30,7 +30,7 @@ cooler and so redder; the unlit bulbs are faint discs of glass.*
 > constants are assumptions (see Known limits), and no real bulb has been measured against it.
 > It has **never been loaded into Resolume on macOS** — the one host it has run in there is the
 > fleet's own test host, `oxbow`, for 120 frames.
-> GATE_SENTENCE
+> On Windows it has: a build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
 > Try it on a spare layer before you put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
@@ -50,7 +50,9 @@ Windows  %USERPROFILE%\Documents\Resolume Arena\Extra Effects\
 Avenue uses the same layout under its own folder name. The effect then appears in the effects
 browser as **SW Filament**.
 
-SIGNING_SENTENCE The Windows download is an x64 installer or a `.zip`. It is not code-signed, so
+The macOS download is a universal build (Apple silicon and Intel), as a `.dmg` or a `.zip`. It
+is Developer ID-signed and notarised by the release pipeline after publication, so the bundle simply
+loads; if macOS refuses a download, it predates the signing — download it again. The Windows download is an x64 installer or a `.zip`. It is not code-signed, so
 the installer trips SmartScreen once: **More info** → **Run anyway**.
 
 ---
@@ -128,7 +130,9 @@ carries on from where the wall was.
 bulbs edge to edge; 0.8 leaves small points of light.
 
 **Pixel Mode** (off). Each bulb is drawn as a flat square filling its cell (less the gap) instead
-of a bulb with a coil in a glass. The filaments, the colour and the timing are unchanged.
+of a bulb with a coil in a glass. The filaments, the colour and the timing are unchanged. It reads
+best on a coarse wall: at 160 × 90 the squares are a few pixels across and look much like the
+bulbs.
 
 **Glass** (Clear). What the bulb's envelope is:
 
