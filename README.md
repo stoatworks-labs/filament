@@ -140,7 +140,7 @@ renderer, which is what a GPU-less CI runner has. What it establishes:
   1500 K in 176 ms, and slows as it goes: its time constant at 1200 K is 2.5 times its
   time constant at 2400 K. An exponential's wouldn't change.
 - **Ripple.** Under a triac the temperature ripples at exactly 100 Hz on 50 Hz mains and
-  120 Hz on 60 Hz, 137 K peak to peak on a 25 W filament and 19 K on a 500 W one.
+  120 Hz on 60 Hz, 137 K peak to peak on a 25 W filament and 18.5 K on a 500 W one.
 - **Resize.** An output resize and a change of grid, mid-fade, leave every bulb's
   temperature exactly where it would have been.
 - **Negative controls.** A lamp without inrush fails the rise; a linear cooler fails the
