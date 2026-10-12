@@ -1,12 +1,14 @@
 # Filament user guide
 
 Filament is **a wall of incandescent bulbs, for [Resolume](https://resolume.com) Arena and
-Avenue**, as an FFGL effect. It does not draw glowing dots with a slow fade. Every bulb of the
-wall is a tungsten wire heated by current, and its light is its temperature: its dimmer is set by
-its cell of the clip, the mains drives it through that dimmer, and the wire's own heat balance
-decides how hot it gets and how fast. Dimmed bulbs going red as well as dark, flashes that come up
-fast and die away slowly, the surge of a cold bulb, the lag of a big lamp and the ripple of a
-small one are all what the filament does, not what somebody drew.
+Avenue**, as an FFGL effect. Each bulb is a tungsten wire heated by current, with its dimmer set
+by its cell of the clip, and its light comes from how hot the wire gets.
+
+There are no glowing dots with a slow fade here. The mains drives each bulb through its dimmer,
+and the wire's own heat balance decides how hot it gets and how fast. Dimmed bulbs going red as
+well as dark, flashes that come up fast and die away slowly, the surge of a cold bulb, the lag of
+a big lamp and the ripple of a small one all come from the filament rather than from anybody
+drawing them.
 
 ![Resolume's demo clip Metalive through the wall: a tumbling sphere of tiles drawn in clear bulbs, the hot ones yellow-white with glowing coils, the dim ones orange, the unlit ones faint discs of glass](hero.png)
 
@@ -15,8 +17,8 @@ offline harness rather than captured from Resolume: a 48 × 27 wall of clear 40 
 square-law dimmers. The bright tiles are filaments near 2800 K, nearly white; the dim ones are
 cooler and so redder; the unlit bulbs are faint discs of glass.*
 
-> **Before you rely on this:** released at **v0.1.0**, and honestly early. The filaments are
-> measured rather than asserted, by a harness that drives the real plugin class and reads each
+> **Before you rely on this:** released at **v0.1.0**, and still early days. The filaments are
+> measured rather than just asserted, by a harness that drives the plugin class itself and reads each
 > bulb's temperature back through the plugin's own probes, at two rasters and on a software
 > renderer: at a steady voltage a filament settles where power in balances power out (at rated
 > voltage 2799.95 K against 2800); its light sits on the Planckian locus to 1e-6 in xy and moves
@@ -28,9 +30,14 @@ cooler and so redder; the unlit bulbs are faint discs of glass.*
 > deliberately broken models are each shown to fail their check. All 14 controls are shown to
 > change the picture. **The checks verify the stated model, not a real lamp**: three of its
 > constants are assumptions (see Known limits), and no real bulb has been measured against it.
-> It has **never been loaded into Resolume on macOS** — the one host it has run in there is the
+> It has **never been loaded into Resolume on macOS**. The one host it has run in there is the
 > fleet's own test host, `oxbow`, for 120 frames.
-> On Windows it has: a build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
+> On Windows, a build of this source loads, registers and renders in Resolume Arena 7.27.1 on
+> software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the
+> plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The
+> gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall
+> moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other
+> controls read 10 to 55). Software rendering says nothing about a GPU or about speed.
 > Try it on a spare layer before you put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
@@ -39,7 +46,7 @@ cooler and so redder; the unlit bulbs are faint discs of glass.*
 
 ## Installing
 
-Every download carries one effect, **SW Filament**. Drop it into Resolume's effects folder and
+Every download has one effect in it, **SW Filament**. Drop it into Resolume's effects folder and
 restart Resolume:
 
 ```
@@ -50,10 +57,11 @@ Windows  %USERPROFILE%\Documents\Resolume Arena\Extra Effects\
 Avenue uses the same layout under its own folder name. The effect then appears in the effects
 browser as **SW Filament**.
 
-The macOS download is a universal build (Apple silicon and Intel), as a `.dmg` or a `.zip`. It
-is Developer ID-signed and notarised by the release pipeline after publication, so the bundle simply
-loads; if macOS refuses a download, it predates the signing — download it again. The Windows download is an x64 installer or a `.zip`. It is not code-signed, so
-the installer trips SmartScreen once: **More info** → **Run anyway**.
+The macOS download is a universal build (Apple silicon and Intel), as a `.dmg` or a `.zip`. It's
+Developer ID-signed and notarised by the release pipeline after publication, so the bundle just
+loads. If macOS refuses a download, it's from before the signing, so download it again. The
+Windows download is an x64 installer or a `.zip`. It isn't code-signed, so the installer trips
+SmartScreen once: **More info** → **Run anyway**.
 
 ---
 
@@ -78,21 +86,21 @@ capacity. Each term makes something you can see:
 
 Every lamp is designed the same way: it dissipates its rated wattage at the mains voltage with the
 wire at **2800 K** in a 25 °C room, and 15% of that power leaves by conduction. So every lamp at
-full reads the same colour and the same brightness — Wattage changes how the wall **moves**, not
+full reads the same colour and the same brightness. Wattage changes how the wall **moves**, not
 how bright it is.
 
 ---
 
 ## Start here
 
-Put SW Filament on a layer or a clip with **some brightness and some movement** — the bundled
-Metalive, IntoTheGlow_02 or Beat 001 loops. Out of the box you get a 48 × 27 wall of clear 40 W
+Put SW Filament on a layer or a clip with **some brightness and some movement**, such as the
+bundled Metalive, IntoTheGlow_02 or Beat 001 loops. Out of the box you get a 48 × 27 wall of clear 40 W
 bulbs on 50 Hz square-law dimmers, with a modest halo and bloom.
 
 Then:
 
 1. **Mix → 0 and back.** Compare the clip with the wall. Where the clip is bright the bulbs are
-   near white; where it is mid-grey they are orange; where it is dark they are off, and you see
+   near white; where it's mid-grey they're orange; where it's dark they're off, and you see
    the glass.
 2. **Wattage → 1000 W.** Watch a flash or a fast move. The heavy wires barely register a quick
    flash and glow on after it, and movement smears into a warm trail. **→ 10 W** and the wall
@@ -146,9 +154,9 @@ The coloured glasses' transmittances are chosen by eye, as the look of each glas
 from a filter.
 
 **Gels** (Off, RGB). RGB puts three co-located filaments in every cell, behind red, green and blue
-gels, each driven by its own channel of the clip, and draws them as one bulb. That is how a bulb
+gels, each driven by its own channel of the clip, and draws them as one bulb. That's how a bulb
 wall shows colour. Tungsten at 2800 K has much more red than blue in it, so the blue gel is dim;
-that is left in rather than trimmed. RGB costs three filaments per cell.
+that's been left in rather than trimmed. RGB costs three filaments per cell.
 
 ---
 
@@ -191,7 +199,7 @@ barely matters above a dull red.
 frame, as a camera's shutter would collect it. A 100 Hz ripple averages out over a 1/60 s or
 1/30 s frame almost entirely: at the defaults the frame-to-frame variation on a flat grey is ±0.3%,
 about one code value. A 10 W bulb on a triac at 50 Hz keeps a faint ±1% beat at 60 fps, which is
-what filming a small tungsten lamp at 60 fps looks like. At 60 Hz mains and 60 fps there is none.
+what filming a small tungsten lamp at 60 fps looks like. At 60 Hz mains and 60 fps there's none.
 
 ---
 
@@ -209,7 +217,7 @@ rather than clipping. Raise it to see dim filaments; lower it to keep the hot on
 white.
 
 **Mix** (0 to 1, default 1). The wall over the clip. At 1 the output is opaque: the wall paints
-the whole frame, whatever the clip's alpha. At 0 it is the clip, with the clip's own alpha.
+the whole frame, whatever the clip's alpha. At 0 it's the clip, with the clip's own alpha.
 
 ---
 
@@ -218,7 +226,7 @@ the whole frame, whatever the clip's alpha. At 0 it is the clip, with the clip's
 Four stages a frame, with every filament's temperature kept on the GPU between frames:
 
 1. **Drive.** One texel per bulb: the mean of an 8 × 8 grid of samples over its cell of the clip,
-   as code values — Rec. 709 luma for a white wall, each channel for RGB gels. The code value is
+   as code values (Rec. 709 luma for a white wall, each channel for RGB gels). The code value is
    the fader.
 2. **Thermal.** One texel per bulb, ping-ponged: the heat-balance equation over the frame's seconds
    in fourth-order Runge–Kutta substeps, the mains waveform through the dimmer law evaluated at
@@ -266,7 +274,7 @@ Windows.
 **The wall is dark except for a few bulbs.** The clip is dark, or Dimmer is Linear. Use Square
 Law, raise Exposure, or lift the clip with a levels effect ahead of the plugin.
 
-**Everything is orange, nothing is white.** The clip's highlights are not reaching full: a bulb is
+**Everything is orange, nothing is white.** The clip's highlights aren't reaching full: a bulb is
 only near white at full drive. Raise Exposure a stop, or brighten the clip.
 
 **A thin line or a small shape is gone.** Each bulb averages its whole cell. Raise Columns and
@@ -275,21 +283,21 @@ Rows.
 **The wall smears and lags.** Wattage is high: a big lamp is slow. Lower it; 10 W follows the clip
 almost frame for frame.
 
-**The blue is missing.** That is tungsten: a 2800 K filament has little blue in it, so behind a
-blue gel it is dim. Blue glass is dim for the same reason.
+**The blue is missing.** That's tungsten: a 2800 K filament has little blue in it, so behind a
+blue gel it's dim. Blue glass is dim for the same reason.
 
-**The bulbs flicker faintly.** A small lamp on a triac, at a frame rate that does not divide the
-ripple: the light is averaged over each frame, and what is left is a slow beat. Raise Wattage, or
+**The bulbs flicker faintly.** A small lamp on a triac, at a frame rate that doesn't divide the
+ripple: the light is averaged over each frame, and what's left is a slow beat. Raise Wattage, or
 use Square Law.
 
 **The clip's transparency is gone.** The wall is opaque above Mix 0. Lower Mix to see the clip's
 own alpha again.
 
-**SW Filament is not in the effects browser.** Check the folder under Installing, and that
+**SW Filament isn't in the effects browser.** Check the folder under Installing, and that
 Resolume was restarted.
 
-**The effect does nothing at all.** A shader that will not compile looks exactly like that, and
-the real message is in the log:
+**The effect does nothing at all.** That's what a shader that won't compile looks like, and the
+actual error is in the log:
 
 ```
 macOS    ~/Library/Logs/filament/filament.YYYY-MM-DD.log
@@ -306,8 +314,8 @@ clock and the unit the plugin decided it is in, and on every lamp change the wir
 
 - **Three of the model's constants are assumptions, not measurements.** The wire's total
   emissivity is taken as a constant **0.30**; the coiled coil is taken to radiate from **half** its
-  surface (it shades itself); and **15%** of the rated power is taken to leave by conduction. They
-  are round figures, not read from a table. Together they size the wire, and so its heat capacity
+  surface (it shades itself); and **15%** of the rated power is taken to leave by conduction.
+  They're round figures, not read from a table. Together they size the wire, and so its heat capacity
   and every time constant of the wall. They give a 60 W 230 V filament of 34 µm by 0.92 m and
   16 mg, the right order for a real one, but **no real lamp has been measured against the model**.
   Real tungsten's emissivity rises with temperature; modelling that would make the fall slower
@@ -320,21 +328,22 @@ clock and the unit the plugin decided it is in, and on every lamp change the wir
 - **The filament's colour is a black body's.** Real tungsten's spectral emissivity falls slowly
   across the visible, which makes a real filament slightly bluer than a black body at the same
   temperature.
-- **Every bulb is identical.** A real wall's lamps differ a little; here they do not.
+- **Every bulb is identical.** A real wall's lamps differ a little; here they don't.
 - **The picture is judged by eye**: the bulb shapes, the coil, the halo, the reflector, the bloom,
   the glass sheen, the glass tints, the gels and the exposure curve. The harness proves each
   control moves the picture; nothing measures how it looks.
 - **The fader is the code value**, not linear light, averaged over the cell.
 - **Never loaded into Resolume on macOS.** Everything numeric was compiled, rendered and measured
-  offline against the real plugin class in a headless CGL context, plus an `oxbow` load.
+  offline against the plugin class itself in a headless CGL context, plus an `oxbow` load.
 - **Never seen on camera footage**, only on Resolume's bundled CG loops.
 - **Checked at 320 × 180 and 1280 × 720** in the harness, and only timed at 4K.
 - **Only ever run on an Apple M4 Max**, although the macOS build contains an Intel slice. On
   Windows, see the note at the top of this guide.
 - **No presets**, no preheat, no lamp-to-lamp variation, and no OpenFX version.
 - **There is a browser demo** at [filament-demo.stoatworks-labs.com](https://filament-demo.stoatworks-labs.com/).
-  It is a port to a web page, not the plugin: the shaders run in WebGL2, and the time bookkeeping
-  and the lamp sizing are rewritten in JavaScript. The page lists what it does not reproduce.
+  It's a port to a web page rather than the plugin: the shaders run in WebGL2, and the time
+  bookkeeping and the lamp sizing are rewritten in JavaScript. The page lists what it doesn't
+  reproduce.
 
 ---
 
@@ -348,4 +357,4 @@ the project page, the source on GitHub and the support page in your browser.
 
 [github.com/stoatworks-labs/filament/issues](https://github.com/stoatworks-labs/filament/issues).
 A screenshot, the Wall and Bulb settings, and the composition's resolution and frame rate are
-usually enough. If the effect did nothing, attach the log.
+usually enough for me to go on. If the effect did nothing, attach the log.

@@ -1,29 +1,25 @@
 # filament
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
-> (Anthropic), directed and reviewed by a human author. The filaments are not asserted
-> but measured: an offline harness drives the real plugin class in a headless GL context
-> on a synthetic clock, reads each bulb's temperature back through the plugin's own probe
-> hooks, and sets it against the stated heat-balance equation integrated independently in
-> double — a filament at a steady voltage settles where power in balances power out, and
-> at rated voltage at 2800 K to within 0.06 K; the light at each temperature sits on the
-> Planckian locus this harness integrates from the CIE 1931 observer to 1e-6 in xy, and
-> moves redward with every step down; a cold start follows the equation to 0.004 K and
-> reaches 90% in 65 ms where a lamp without tungsten's fifteenfold inrush would take
-> 135; switch-off follows T⁴ radiation plus conduction, not an exponential; a
-> triac-dimmed filament ripples at exactly twice the mains, seven times more on a 25 W
-> lamp than a 500 W one; and a resize mid-fade keeps every temperature exactly — with six
-> negative controls that prove each check can fail. It has **never been loaded into
-> Resolume on macOS**; there it is loaded by [oxbow](https://github.com/stoatworks-labs/oxbow),
-> which is a real FFGL host and is not Resolume. On Windows it passes the fleet's Arena
-> gate in Resolume Arena 7.27.1 on software rendering. See [Status](#status).
+> (Anthropic), directed and reviewed by a human author. It has **never been loaded into
+> Resolume on macOS**; there it's loaded by [oxbow](https://github.com/stoatworks-labs/oxbow),
+> which is a working FFGL host but isn't Resolume. On Windows it passes the fleet's Arena gate
+> in Resolume Arena 7.27.1 on software rendering. Everything else is measured by an offline
+> harness that drives the plugin class itself, reads each bulb's temperature back through the
+> plugin's own probes, and sets it against the heat-balance equation solved independently in
+> double: a filament at rated voltage settles at 2800 K to within 0.06 K, its light sits on the
+> Planckian locus to 1e-6 in xy, and a cold one reaches 90% in 65 ms where a lamp without
+> tungsten's fifteenfold inrush would take 135. Six negative controls show each check can
+> fail. The rest is under [Status](#status).
 
-The picture on a wall of incandescent bulbs, as an FFGL effect for
-[Resolume](https://resolume.com) Arena and Avenue.
+Your picture on a wall of incandescent bulbs, as an FFGL effect for
+[Resolume](https://resolume.com) Arena and Avenue. Every bulb is a tungsten filament
+with its own heat balance, so fades go warm, flashes come up fast and die away slowly,
+and nobody has to get up a ladder to change the blown ones.
 
 ![Resolume's demo clip Metalive through the wall: a tumbling sphere of tiles drawn in clear bulbs, the hot ones yellow-white with glowing coils, the dim ones orange, the unlit ones faint discs of glass](docs/hero.png)
 
-<sub>One frame, rendered by `fitest --pipe`, the offline harness — not captured from
+<sub>One frame, rendered by `fitest --pipe`, the offline harness, rather than captured from
 Resolume. Resolume's bundled demo clip Metalive 01 at the defaults.</sub>
 
 <!-- downloads:start -->
@@ -64,17 +60,17 @@ macOS builds are signed and notarised and open normally. The Windows builds are 
 
 ## The one idea
 
-An incandescent bulb is a tungsten wire heated by current. It is not an LED with a slow
-fade. Its light comes from its **temperature**, and its temperature follows the wire's
+An incandescent bulb is a tungsten wire heated by current, which is a different beast
+from an LED with a slow fade. Its light comes from its **temperature**, and its temperature follows the wire's
 heat balance: electrical power in, through a resistance that changes with temperature;
 radiated power out, as T⁴; conducted power out; all against the wire's heat capacity.
 
-So each bulb of the wall has its dimmer set by its cell of the clip, and its own
+So each bulb on the wall has its dimmer set by its cell of the clip, and its
 filament does the rest.
 
 ## What falls out
 
-None of these is drawn. Each is the filament doing what filaments do:
+None of this is drawn. It's the filament doing what filaments do:
 
 - **Warm fades.** Dim a bulb and it doesn't just get darker, it gets redder: its light is
   Planck's law at the filament's temperature, integrated against the CIE colour-matching
@@ -84,8 +80,8 @@ None of these is drawn. Each is the filament doing what filaments do:
   milliseconds and dies away in hundreds, and a moving picture smears into a warm trail.
 - **Inrush.** Cold tungsten has a fifteenth of its hot resistance, so a cold bulb draws
   fifteen times its rated power and heats twice as fast as its steady time constant says.
-- **Mains ripple.** The drive is the mains waveform through a dimmer — a sine-wave
-  dimmer, a square-law one, or a leading-edge triac that chops each half-cycle — so every
+- **Mains ripple.** The drive is the mains waveform through a dimmer (a sine-wave
+  dimmer, a square-law one, or a leading-edge triac that chops each half-cycle), so every
   filament's temperature ripples at twice the mains. A small filament ripples a lot, a big
   one hardly at all.
 - **Big lamps are slow.** Each lamp's wire is sized from its wattage and voltage, so its
@@ -113,7 +109,7 @@ vanish, because each bulb sees the average of its whole cell.
 
 The defaults are a 48 × 27 wall of clear 40 W bulbs on 50 Hz square-law dimmers, with a
 modest halo and bloom. Square law because tungsten on a plain voltage dimmer is so
-contrasty that every mid-grey goes dark; that is what theatre dimmer curves are for.
+contrasty that every mid-grey goes dark; that's what theatre dimmer curves are for.
 
 The light is what a camera's open shutter would collect over the frame, so the 100 Hz
 ripple of a 40 W bulb is invisible at 60 fps; a 10 W bulb on a triac keeps a faint 20 Hz
@@ -122,13 +118,13 @@ wall paints the whole frame, whatever the clip's alpha.
 
 ## Status
 
-**v0.1.0, released 25 September 2026, and honestly early.** There is a
+**v0.1.0, released 25 September 2026, and still early days.** There's a
 [user guide](https://stoatworks-labs.com/software/filament/guide/)
 ([PDF](docs/USER-GUIDE.pdf)) and a [project page](https://stoatworks-labs.com/software/filament/).
 
 ### Measured offline, on macOS
 
-`tools/verify.sh` passes on this machine (M4 Max, macOS 26.4) against a fresh universal
+`tools/verify.sh` passes on this Mac (M4 Max, macOS 26.4) against a fresh universal
 Release build, running every check at 320×180 and 1280×720 and again on Apple's software
 renderer, which is what a GPU-less CI runner has. What it establishes:
 
@@ -142,7 +138,7 @@ renderer, which is what a GPU-less CI runner has. What it establishes:
   constant-resistance lamp would take 135.3 ms.
 - **Fall.** Switched off, the decay follows radiation plus conduction to 0.17 K, reaches
   1500 K in 176 ms, and slows as it goes: its time constant at 1200 K is 2.5 times its
-  time constant at 2400 K. An exponential's would not change.
+  time constant at 2400 K. An exponential's wouldn't change.
 - **Ripple.** Under a triac the temperature ripples at exactly 100 Hz on 50 Hz mains and
   120 Hz on 60 Hz, 137 K peak to peak on a 25 W filament and 19 K on a 500 W one.
 - **Resize.** An output resize and a change of grid, mid-fade, leave every bulb's
@@ -167,16 +163,16 @@ depending on the lamp; small lamps need the most.
 
 ### In Resolume Arena, on Windows
 
-On Windows it has: a build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
+A build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
 
 ### What filming the release video found
 
-The video is rendered through `fitest --pipe` over Resolume's demo clips. Filming found no
-defect, and four facts now in the guide: a 1000 W wall barely registers a quick flash (the
+The video is rendered through `fitest --pipe` over Resolume's demo clips. Filming turned up
+no defects, and four facts that are now in the guide: a 1000 W wall barely registers a quick flash (the
 wall's mean moved 43 → 55 across a flash that takes the 40 W wall 30 → 97) and glows on after
 it; a Linear dimmer leaves only the highlights (a face's mean 52 → 25); behind RGB gels the
 blue is nearly dark; and the mains ripple is averaged away by a 30 fps shutter, so the video
-does not show it (the harness measures it).
+doesn't show it (the harness measures it).
 
 ### Not done
 
@@ -187,17 +183,17 @@ does not show it (the harness measures it).
 ## Browser demo
 
 [filament-demo.stoatworks-labs.com](https://filament-demo.stoatworks-labs.com/)
-runs the plugin's own shaders in WebGL2 — the drive, thermal, bloom and output
-passes and the filament library they share — spliced in from `source/Shaders.cpp`
+runs the plugin's own shaders in WebGL2 (the drive, thermal, bloom and output
+passes and the filament library they share), spliced in from `source/Shaders.cpp`
 by `demo/tools/sync_shaders.py` and checked character for character, with the
 lamp's tables and the Planck table, by `demo/tools/check_shaders.py` from
 `tools/verify.sh`. So the heat balance runs on the GPU as in the plugin: RK4
-substeps over a float temperature per bulb, ping-ponged. Its CPU half — the clock
+substeps over a float temperature per bulb, ping-ponged. Its CPU half (the clock
 and the mains phase, the lamp's wire sized from its wattage, the substep rule and
-every control's law — is a **hand port to JavaScript**, and nothing checks a port
+every control's law) is a **hand port to JavaScript**, and nothing checks a port
 but a reader; the emissivity, the radiating fraction and the conducted share are
 the plugin's assumptions there as here. Columns and Rows are dropdowns (the kit
-has no integer control). It is served from `demo/` by this repo's own Worker and
+has no integer control). It's served from `demo/` by this repo's own Worker and
 redeploys on every push to main.
 
 ## Build
