@@ -337,8 +337,8 @@ clock and the unit the plugin decided it is in, and on every lamp change the wir
   offline against the plugin class itself in a headless CGL context, plus an `oxbow` load.
 - **Never seen on camera footage**, only on Resolume's bundled CG loops.
 - **Checked at 320 × 180 and 1280 × 720** in the harness, and only timed at 4K.
-- **Only ever run on an Apple M4 Max**, although the macOS build contains an Intel slice. On
-  Windows, see the note at the top of this guide.
+- **On a Mac I've only run it on Apple silicon** (an M4 Max, and CI's macOS runner), although
+  the macOS build contains an Intel slice. On Windows, see the note at the top of this guide.
 - **No presets**, no preheat, no lamp-to-lamp variation, and no OpenFX version.
 - **There is a browser demo** at [filament-demo.stoatworks-labs.com](https://filament-demo.stoatworks-labs.com/).
   It's a port to a web page rather than the plugin: the shaders run in WebGL2, and the time
