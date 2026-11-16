@@ -345,8 +345,9 @@ void Organ::Design( const Settings& s )
 	dcB0           = 1.0 / ( 1.0 + K );
 	dcP            = ( 1.0 - K ) / ( 1.0 + K );
 
-	//The detector: through R16 (charging) while the diode conducts, R19
-	//(discharging) always. Exact for an input held over one sample.
+	//The detector: through the 10k (red's R16, charging) while the diode
+	//conducts, the 100k (red's R19, discharging) always. Exact for an input
+	//held over one sample.
 	const double dt = 1.0 / fs;
 	for( int c = 0; c < 3; ++c )
 	{

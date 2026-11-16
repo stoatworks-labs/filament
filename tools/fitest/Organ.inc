@@ -683,22 +683,23 @@ int runCrossover( int, int, int perturb, bool quiet = false )
 }
 
 //---------------------------------------------------------------------------
-// --detector (no GL): each band's detector releases with ETI 428's R19 C.
+// --detector (no GL): each band's detector releases with ETI 428's 100k x C.
 //---------------------------------------------------------------------------
 int runDetector( int, int, int perturb, bool quiet = false )
 {
 	//A tone in the middle of each band for 0.3 s, stopped at a zero crossing
 	//(a whole number of periods at 48 kHz), then silence. Once the band's own
 	//ring-down is below the detector the diode is off and the node discharges
-	//through R19 alone: ln v falls on a straight line of slope -1 / ( R19 C ).
+	//through the 100k alone: ln v falls on a straight line of slope -1 / ( R C ).
 	//The slope is fitted to the organ's own detector samples (recorded at the
 	//tap rate) over the 150 ms from 40 ms after the band last swung past 1%
 	//of its level.
 	const OrganKnobs defaults = organDefaults();
 	const double tones[ 3 ]   = { 100.0, 600.0, 6000.0 };//480, 80 and 8 samples a period
 	//ETI 428's parts list (p.79), held here and not read from Organ.h, so a
-	//changed constant there fails: R19 100k, C12 1.0 uF red, 0.47 uF green
-	//and blue.
+	//changed constant there fails: the discharge resistor 100k in every
+	//channel (R19 red, R18 green, R17 blue), C12 1.0 uF red, C11 and C10
+	//0.47 uF green and blue.
 	const double etiR19       = 100.0e3;
 	const double etiC[ 3 ]    = { 1.0e-6, 0.47e-6, 0.47e-6 };
 	const char* names[ 3 ]    = { "bass", "mid", "treble" };
@@ -772,7 +773,7 @@ int runDetector( int, int, int perturb, bool quiet = false )
 		const double Tw  = ( N - 1.0 ) / R;
 		const double tol = 2.0 * resid / ( Tw * std::fabs( slope ) ) + N * std::ldexp( 1.0, -52 );
 		failures += report( std::fabs( tau / want - 1.0 ) <= tol && margin < 1.0, quiet,
-		                    "%-6s %5.0f Hz tone: release tau %.4f ms; R19 x C%s = %.4f ms; off %+.1e (tolerance %.1e: fit residual %.1e over %.0f ms); the diode stayed off (|band| at most %.1e of the node)", names[ c ],
+		                    "%-6s %5.0f Hz tone: release tau %.4f ms; 100k x C%s = %.4f ms; off %+.1e (tolerance %.1e: fit residual %.1e over %.0f ms); the diode stayed off (|band| at most %.1e of the node)", names[ c ],
 		                    tones[ c ], tau * 1e3, c == 0 ? " (1.0 uF)" : " (0.47 uF)", want * 1e3, tau / want - 1.0, tol, resid, Tw * 1e3, margin );
 	}
 

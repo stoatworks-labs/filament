@@ -75,8 +75,9 @@ constexpr double kQ = 0.5;
 constexpr double kDcBlockHertz = 10.0;
 
 /// The detector, ETI 428 (Fig. 1, parts list p.79): a 1N914 half-wave
-/// rectifier, R16 10k into C12 (1.0 uF red, 0.47 uF green and blue), R19
-/// 100k discharging it. The diode is ideal: ETI's pre-bias holds it at its
+/// rectifier, 10k into the node capacitor, 100k discharging it: red's R16,
+/// C12 1.0 uF and R19; green's R15, C11 0.47 uF and R18; blue's R14, C10
+/// 0.47 uF and R17. The diode is ideal: ETI's pre-bias holds it at its
 /// threshold at zero signal.
 constexpr double kChargeOhms        = 10.0e3;
 constexpr double kDischargeOhms     = 100.0e3;
@@ -131,7 +132,7 @@ enum Perturb : int
 	kPerturbFloatClock  = 1024,///< the half-cycle grid from a float clock: --organclock must fail
 	kPerturbNoReset     = 2048,///< the ramp never reset at the zero crossing: --firing and --organstep must fail
 	kPerturbGelRotated  = 4096,///< each filament lit through the next channel's gel: --organcolour must fail
-	kPerturbFastRelease = 8192,///< the detector released through R16 || R19, not R19: --detector must fail
+	kPerturbFastRelease = 8192,///< the detector released through 10k || 100k, not 100k: --detector must fail
 	kPerturbPowerGain   = 16384,///< the gains read as decibels of power: --detector must fail
 };
 

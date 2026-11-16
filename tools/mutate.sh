@@ -31,7 +31,7 @@ MUTANTS=(
 	"source/Organ.cpp|f.a2 = ( 1.0 - alpha ) / a0;|f.a2 = ( 1.0 + alpha ) / a0;|--crossover|C++: the biquad's a2 with alpha added, - -> +"
 	"source/Organ.h|constexpr double kQ = 0.5;|constexpr double kQ = 0.6;|--crossover|C++: Linkwitz-Riley's Q 0.6, 5 -> 6"
 	"source/Organ.cpp|leakKeep[ c ]         = std::exp( -dt / ( release * C ) );|leakKeep[ c ]         = std::exp( +dt / ( release * C ) );|--detector|C++: the detector's release growing, - -> +"
-	"source/Organ.h|{ 1.0e-6, 0.47e-6, 0.47e-6 }|{ 1.0e-6, 0.47e-6, 0.57e-6 }|--detector|C++: the treble detector's C12 0.57 uF, 4 -> 5"
+	"source/Organ.h|{ 1.0e-6, 0.47e-6, 0.47e-6 }|{ 1.0e-6, 0.47e-6, 0.57e-6 }|--detector|C++: the treble detector's C10 0.57 uF, 4 -> 5"
 	"source/Organ.cpp|kPerturbPowerGain ) != 0 ? 10.0 : 20.0 )|kPerturbPowerGain ) != 0 ? 10.0 : 21.0 )|--detector|C++: the gain law 10^( dB / 21 ), 0 -> 1"
 	"source/Organ.cpp|	if( !listed )|	if(  listed )|--organdevices|C++: the devices never listed on the first frame on, ! -> space"
 	"source/Organ.cpp|if( engine && applied != 0.0f )|if( engine && applied == 0.0f )|--organdevices|C++: organ off leaves the device open, ! -> ="
