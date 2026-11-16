@@ -132,6 +132,7 @@ enum Perturb : int
 	kPerturbNoReset     = 2048,///< the ramp never reset at the zero crossing: --firing and --organstep must fail
 	kPerturbGelRotated  = 4096,///< each filament lit through the next channel's gel: --organcolour must fail
 	kPerturbFastRelease = 8192,///< the detector released through R16 || R19, not R19: --detector must fail
+	kPerturbPowerGain   = 16384,///< the gains read as decibels of power: --detector must fail
 };
 
 struct Settings

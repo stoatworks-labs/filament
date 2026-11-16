@@ -770,6 +770,48 @@ int runDetector( int, int, int perturb, bool quiet = false )
 		                    "%-6s %5.0f Hz tone: release tau %.4f ms; R19 x C%s = %.4f ms; off %+.1e (tolerance %.1e: fit residual %.1e over %.0f ms); the diode stayed off (|band| at most %.1e of the node)", names[ c ],
 		                    tones[ c ], tau * 1e3, c == 0 ? " (1.0 uF)" : " (0.47 uF)", want * 1e3, tau / want - 1.0, tol, resid, Tw * 1e3, margin );
 	}
+
+	//The gains are decibels of voltage: the same music at 0 dB and at
+	//+20, +6.02 and -12 dB, and every row's integral scales by 10^( dB / 20 ).
+	//Each row point is a float of a double sum: two roundings in the ratio.
+	{
+		const double db[ 3 ] = { 20.0, 6.0206, -12.0 };
+		organ::Organ plain, gained;
+		Audio a0, a1;
+		organ::Settings s0, s1;
+		s0.lowHertz = s1.lowHertz = defaults.low;
+		s0.highHertz = s1.highHertz = defaults.high;
+		s0.perturb = s1.perturb = perturb;
+		for( int c = 0; c < 3; ++c )
+		{
+			s0.gainDb[ c ] = 0.0;
+			s1.gainDb[ c ] = db[ c ];
+		}
+		double worst = 0.0;
+		int points   = 0;
+		for( int f = 0; f < 60; ++f )
+		{
+			const double end = f / 60.0;
+			a0.feedTo( plain, end + 1.0 / 60.0 + organ::kReserveSeconds + kFeedLead );
+			a1.feedTo( gained, end + 1.0 / 60.0 + organ::kReserveSeconds + kFeedLead );
+			plain.Advance( end - 1.0 / 60.0, end, 50.0, static_cast< int64_t >( std::floor( 100.0 * ( end - 1.0 / 60.0 ) ) ), 4, s0 );
+			gained.Advance( end - 1.0 / 60.0, end, 50.0, static_cast< int64_t >( std::floor( 100.0 * ( end - 1.0 / 60.0 ) ) ), 4, s1 );
+			for( int r = 0; r < plain.RowCount(); ++r )
+				for( int j = 1; j <= organ::kIntervals; ++j )
+					for( int c = 0; c < 3; ++c )
+					{
+						const size_t i   = ( static_cast< size_t >( r ) * organ::kRowPoints + static_cast< size_t >( j ) ) * 4 + static_cast< size_t >( c );
+						const double p0 = plain.Rows()[ i ], p1 = gained.Rows()[ i ];
+						if( p0 <= 0.0 )
+							continue;
+						worst = std::max( worst, std::fabs( p1 / ( p0 * std::pow( 10.0, db[ c ] / 20.0 ) ) - 1.0 ) );
+						++points;
+					}
+		}
+		const double tol = 2.0 * std::ldexp( 1.0, -24 ) * 1.01;
+		failures += report( points > 0 && worst <= tol, quiet, "gains are decibels of voltage: at +20, +6.02 and -12 dB every one of %d row points is 10^( dB / 20 ) of 0 dB's, worst %.1e relative (tolerance %.1e: two float roundings)", points,
+		                    worst, tol );
+	}
 	return failures;
 }
 

@@ -1380,6 +1380,7 @@ int runNegative( int W, int H )
 		{ organ::kPerturbNoPrewarp, "organ: crossover corners not prewarped", runCrossover, "--crossover" },
 		{ organ::kPerturbButterworth, "organ: Butterworth Q 0.707 for LR2", runCrossover, "--crossover" },
 		{ organ::kPerturbFastRelease, "organ: detector released through R16||R19", runDetector, "--detector" },
+		{ organ::kPerturbPowerGain, "organ: gains read as decibels of power", runDetector, "--detector" },
 		{ organ::kPerturbLinearPower, "organ: conduction power linear in angle", runFiring, "--firing" },
 		{ organ::kPerturbNoReset, "organ: ramp never reset at zero crossings", runFiring, "--firing" },
 		{ organ::kPerturbNoReset, "organ: ramp never reset at zero crossings", runOrganStep, "--organstep" },
@@ -1713,7 +1714,8 @@ void usage()
 		"  checks that need no GL:\n"
 		"  --names             nothing the host will silently truncate\n"
 		"  --crossover         organ: each band's -6.02 dB point at its stated corner\n"
-		"  --detector          organ: each band's detector releases with ETI 428's R19 C\n"
+		"  --detector          organ: each band's detector releases with ETI 428's R19 C;\n"
+		"                      the gains are decibels of voltage\n"
 		"\n"
 		"  the organ's music (--out, --pipe, --bench, whenever Organ is On), fed through\n"
 		"  earshot's feed(); no audio device is ever opened:\n"

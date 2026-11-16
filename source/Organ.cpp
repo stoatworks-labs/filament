@@ -615,7 +615,7 @@ void Organ::Advance( double start, double end, double hertz, int64_t firstHalf, 
 	rowFirstHalf = firstHalf;
 	double gain[ 3 ];
 	for( int c = 0; c < 3; ++c )
-		gain[ c ] = std::pow( 10.0, s.gainDb[ c ] / 20.0 );
+		gain[ c ] = std::pow( 10.0, s.gainDb[ c ] / ( ( s.perturb & kPerturbPowerGain ) != 0 ? 10.0 : 20.0 ) );
 	const double frameMean[ 3 ] = { want > 0 ? frameSum[ 0 ] / static_cast< double >( want ) : 0.0,
 		                            want > 0 ? frameSum[ 1 ] / static_cast< double >( want ) : 0.0,
 		                            want > 0 ? frameSum[ 2 ] / static_cast< double >( want ) : 0.0 };
