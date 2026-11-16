@@ -117,6 +117,7 @@ if cmake -B "$BUILD" -DCMAKE_BUILD_TYPE=Release >"$buildlog" 2>&1 \
 	pass "builds"
 else
 	fail "build failed -- run: cmake -B $BUILD -DCMAKE_BUILD_TYPE=Release && cmake --build $BUILD"
+	grep -E 'error|Error' "$buildlog" | head -12 | sed 's/^/      /'
 	exit 1
 fi
 
