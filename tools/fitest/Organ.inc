@@ -100,7 +100,9 @@ constexpr int kNegMenuByIndex        = 1 << 21;///< --organdevices must fail
 // its index: a kick on every beat (a 120 -> 50 Hz sweep, 180 ms decay), a
 // 55 Hz bass note on every off-beat, an A major chord every two seconds, a
 // closed hat (differenced noise, 25 ms) on every eighth. Kick and bass for
-// the bass lamp, the chord for the mid, the hats for the treble.
+// the bass lamp, the chord for the mid, the hats for the treble, mixed so
+// each band's 90th-percentile control is near the median of Resolume's six
+// Beat demo clips (0.055, 0.035, 0.07 at 0 dB through the default bands).
 //---------------------------------------------------------------------------
 double noiseAt( int64_t n )
 {
@@ -115,14 +117,14 @@ double trackAt( int64_t n, int rate )
 {
 	const double t  = static_cast< double >( n ) / rate;
 	const double kb = std::fmod( t, 0.5 );
-	const double kick = 0.9 * std::exp( -kb / 0.18 ) * std::sin( 2.0 * lamp::kPi * ( 50.0 * kb + 70.0 * 0.03 * ( 1.0 - std::exp( -kb / 0.03 ) ) ) );
+	const double kick = 0.225 * std::exp( -kb / 0.18 ) * std::sin( 2.0 * lamp::kPi * ( 50.0 * kb + 70.0 * 0.03 * ( 1.0 - std::exp( -kb / 0.03 ) ) ) );
 	double bass = 0.0;
 	if( t >= 0.25 )
-		bass = 0.35 * std::exp( -std::fmod( t - 0.25, 0.5 ) / 0.15 ) * std::sin( 2.0 * lamp::kPi * 55.0 * t );
+		bass = 0.0875 * std::exp( -std::fmod( t - 0.25, 0.5 ) / 0.15 ) * std::sin( 2.0 * lamp::kPi * 55.0 * t );
 	const double cb    = std::fmod( t, 2.0 );
-	const double chord = 0.12 * std::exp( -cb / 0.4 ) * ( std::sin( 2.0 * lamp::kPi * 440.0 * t ) + std::sin( 2.0 * lamp::kPi * 554.37 * t ) + std::sin( 2.0 * lamp::kPi * 659.25 * t ) );
+	const double chord = 0.16 * std::exp( -cb / 0.4 ) * ( std::sin( 2.0 * lamp::kPi * 440.0 * t ) + std::sin( 2.0 * lamp::kPi * 554.37 * t ) + std::sin( 2.0 * lamp::kPi * 659.25 * t ) );
 	const double hb    = std::fmod( t, 0.125 );
-	const double hat   = 0.3 * std::exp( -hb / 0.025 ) * 0.5 * ( noiseAt( n ) - noiseAt( n - 1 ) );
+	const double hat   = 1.5 * std::exp( -hb / 0.025 ) * 0.5 * ( noiseAt( n ) - noiseAt( n - 1 ) );
 	return 0.6 * ( kick + bass + chord + hat );
 }
 
@@ -925,8 +927,13 @@ struct OrganTrace
 	bool ok = true;
 };
 
-/// The synthetic track through the organ with its defaults on a flat white
-/// wall, `seconds` long at `fps`, the clock starting at `clock`.
+/// What the music checks feed the wall: a flat 0.2, about the mean luma of
+/// Resolume's Beat demo clips at the bulb grid (0.12-0.21), the level the
+/// default gains were set on. On white the defaults hold every lamp on.
+constexpr double kMusicLevel = 0.2;
+
+/// The synthetic track through the organ with its defaults on a flat wall of
+/// kMusicLevel, `seconds` long at `fps`, the clock starting at `clock`.
 OrganTrace organTrace( int W, int H, int perturb, double fps, double seconds, double clock )
 {
 	OrganTrace out;
@@ -942,7 +949,7 @@ OrganTrace organTrace( int W, int H, int perturb, double fps, double seconds, do
 		out.ok = false;
 		return out;
 	}
-	s.upload( flat( W, H, 1.0 ) );
+	s.upload( flat( W, H, kMusicLevel ) );
 	int x, y;
 	s.cellPixel( 2, 1, k.columns, k.rows, x, y );
 	Audio audio;
@@ -1098,7 +1105,7 @@ int runOrganResize( int W, int H, int perturb, bool quiet = false )
 {
 	//runResize's three runs, with the organ on and the synthetic track: A
 	//left alone, B's output 1.5x at frame 20 and back at 28, C's grid
-	//16x9 -> 24x13 at frame 20. The cell level drops from 1 to 0.6 at 15.
+	//16x9 -> 24x13 at frame 20. The cell level drops from 0.25 to 0.15 at 15.
 	const int frames = 41;
 	if( !quiet )
 		std::printf( "organ resize: the organ on the synthetic track; the output resized and the grid changed mid-music, %dx%d\n", W, H );
@@ -1128,7 +1135,7 @@ int runOrganResize( int W, int H, int perturb, bool quiet = false )
 				columns = 24;
 				rows    = 13;
 			}
-			s.upload( flat( s.width, s.height, f < 15 ? 1.0 : 0.6 ) );
+			s.upload( flat( s.width, s.height, f < 15 ? 1.25 * kMusicLevel : 0.75 * kMusicLevel ) );
 			if( !organFrame( s, &audio, f ) )
 				return false;
 			double seconds = 0.0, phase0 = 0.0;

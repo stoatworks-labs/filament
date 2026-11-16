@@ -93,14 +93,17 @@ Filament::Filament() :
 	params[ PT_EXPOSURE ] = 0.5f;
 	params[ PT_MIX ]      = 1.0f;
 
-	//The colour organ: off, so a v0.1.0 composition renders as it did. Its
-	//defaults were chosen on Resolume's demo music (AGENTS.md, "Decisions").
+	//The colour organ: off, so a v0.1.0 composition renders as it did. The
+	//bands follow ETI 428's stated split: red up to "the A an octave below
+	//middle C", read as 220 Hz, and green over the next three octaves, to
+	//1760 Hz. The gains were set on Resolume's six Beat demo clips, each
+	//played through its own video (SPEC-filament-organ.md, "Defaults").
 	params[ PT_ORGAN ]          = 0.0f;//Off
-	params[ PT_CROSSOVER_LOW ]  = organ::CrossoverLowParam( 200.0 );
-	params[ PT_CROSSOVER_HIGH ] = organ::CrossoverHighParam( 2000.0 );
-	params[ PT_BASS_GAIN ]      = organ::GainParam( 24.0 );
-	params[ PT_MID_GAIN ]       = organ::GainParam( 24.0 );
-	params[ PT_TREBLE_GAIN ]    = organ::GainParam( 24.0 );
+	params[ PT_CROSSOVER_LOW ]  = organ::CrossoverLowParam( 220.0 );
+	params[ PT_CROSSOVER_HIGH ] = organ::CrossoverHighParam( 1760.0 );
+	params[ PT_BASS_GAIN ]      = organ::GainParam( 48.0 );
+	params[ PT_MID_GAIN ]       = organ::GainParam( 51.0 );
+	params[ PT_TREBLE_GAIN ]    = organ::GainParam( 46.0 );
 	params[ PT_BASS_GEL ]       = 0.0f;//106 Primary Red
 	params[ PT_MID_GEL ]        = 1.0f;//139 Primary Green
 	params[ PT_TREBLE_GEL ]     = 2.0f;//119 Dark Blue

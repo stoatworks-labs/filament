@@ -97,7 +97,7 @@ constexpr double kLowMaxHertz  = 500.0;
 constexpr double kHighMinHertz = 500.0;
 constexpr double kHighMaxHertz = 8000.0;
 constexpr double kGainMinDb    = -12.0;
-constexpr double kGainMaxDb    = 48.0;
+constexpr double kGainMaxDb    = 60.0;
 
 double CrossoverLowHertz( float value );  ///< geometric
 float CrossoverLowParam( double hertz );

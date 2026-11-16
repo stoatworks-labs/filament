@@ -34,6 +34,14 @@ swept (Columns 4 and 160, Rows 2 and 90).
 first match.
 
 **Never sweep the About block.** Those are buttons that open a web browser.
+
+**The organ's controls only act with the organ on.** Each gets Organ = On,
+and the harness feeds its synthetic track through earshot's feed(), so the 40
+frames have kicks, stabs and hats for the crossover, gains and gels to act on.
+Status Lamp draws only when the organ is on. Audio Input is not swept: what
+it picks depends on the machine, and choosing a device ends the feed, so the
+picture would change for a reason that says nothing about the wiring;
+`fitest --organdevices` checks that menu on a scripted backend instead.
 """
 import argparse
 import concurrent.futures
@@ -54,7 +62,17 @@ FRAMES = 40
 # beginning with "_" are HARNESS settings, not plugin parameters:
 #   _frames     how many frames to render (default 40)
 #   _low/_high  the two positions to compare, when not the range's ends
-CONTEXT = {}
+ORGAN_ON = {"Organ": 1}
+CONTEXT = {
+    name: ORGAN_ON
+    for name in ("Crossover Low", "Crossover High", "Bass Gain", "Mid Gain",
+                 "Treble Gain", "Bass Gel", "Mid Gel", "Treble Gel", "Status Lamp")
+}
+
+# Controls the sweep cannot judge, and where they are checked instead.
+SKIP = {
+    "Audio Input": "a device menu: fitest --organdevices checks it on a scripted backend",
+}
 
 
 def parameters(binary):
@@ -160,6 +178,9 @@ def main():
     skipped = []
     work = []
     for pid, name, kind, low, high in parameters(binary):
+        if name in SKIP:
+            skipped.append((name, SKIP[name]))
+            continue
         if kind == "about":
             skipped.append((name, "a button that opens a web browser"))
             continue

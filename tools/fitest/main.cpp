@@ -1715,8 +1715,9 @@ void usage()
 		"  (default)           the synthetic track: kick, bass, chord stabs, hats at 120 BPM\n"
 		"  --wav PATH          a WAV file (PCM 16/24/32 or float), looped if short\n"
 		"  --silent            zeros\n"
-		"  --trace PATH        --out only: per frame, each channel's firing angle for a white\n"
-		"                      cell over the half-cycles that ended in it, and the mean output\n"
+		"  --trace PATH        --out only: per frame, over the half-cycles that ended in it, each\n"
+		"                      channel's firing angle for a white cell and its control (gain x\n"
+		"                      detector, 1 fires at 90 degrees), and the mean output\n"
 		"  --trace-state       with --trace: the centre bulb's three filament temperatures instead\n"
 		"\n"
 		"  --bench             time ProcessOpenGL at 720p, 1080p and 4K, and the state held\n"
@@ -2086,10 +2087,10 @@ int main( int argc, char** argv )
 		{
 			session.floatOutput = true;
 			session.plugin.SetProbeForTest( model::kProbeState );
-			std::fprintf( trace, "frame,seconds,fire_bass_deg,fire_mid_deg,fire_treble_deg,T_bass,T_mid,T_treble\n" );
+			std::fprintf( trace, "frame,seconds,fire_bass_deg,fire_mid_deg,fire_treble_deg,control_bass,control_mid,control_treble,T_bass,T_mid,T_treble\n" );
 		}
 		else
-			std::fprintf( trace, "frame,seconds,fire_bass_deg,fire_mid_deg,fire_treble_deg,mean_r,mean_g,mean_b\n" );
+			std::fprintf( trace, "frame,seconds,fire_bass_deg,fire_mid_deg,fire_treble_deg,control_bass,control_mid,control_treble,mean_r,mean_g,mean_b\n" );
 	}
 	if( !session.begin( width, height ) )
 		return finish( 1 );
@@ -2116,7 +2117,7 @@ int main( int argc, char** argv )
 		{
 			//The half-cycles that ended inside this frame are final: their
 			//firing angle for a white cell (b = 1), averaged; 180 = never.
-			double fire[ 3 ] = { 0.0, 0.0, 0.0 };
+			double fire[ 3 ] = { 0.0, 0.0, 0.0 }, control[ 3 ] = { 0.0, 0.0, 0.0 };
 			int ended        = 0;
 			if( session.plugin.GetFloatParameter( Filament::PT_ORGAN ) >= 0.5f )
 			{
@@ -2133,12 +2134,18 @@ int main( int argc, char** argv )
 						continue;
 					const float* row = o.Rows() + static_cast< size_t >( r ) * organ::kRowPoints * 4;
 					for( int c = 0; c < 3; ++c )
+					{
 						fire[ c ] += 180.0 * std::min( firstCrossing( row, c, 0.5 ), 1.0 );
+						control[ c ] += row[ organ::kIntervals * 4 + c ];
+					}
 					++ended;
 				}
 			}
-			for( double& f : fire )
-				f = ended > 0 ? f / ended : 180.0;
+			for( int c = 0; c < 3; ++c )
+			{
+				fire[ c ]    = ended > 0 ? fire[ c ] / ended : 180.0;
+				control[ c ] = ended > 0 ? control[ c ] / ended : 0.0;
+			}
 			double extra[ 3 ] = { 0.0, 0.0, 0.0 };
 			if( traceState )
 			{
@@ -2161,7 +2168,8 @@ int main( int argc, char** argv )
 				for( int c = 0; c < 3; ++c )
 					extra[ c ] = sum[ c ] / ( static_cast< double >( img.size() / 4 ) * 255.0 );
 			}
-			std::fprintf( trace, "%d,%.6f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f\n", frame, static_cast< double >( frame ) / session.fps, fire[ 0 ], fire[ 1 ], fire[ 2 ], extra[ 0 ], extra[ 1 ], extra[ 2 ] );
+			std::fprintf( trace, "%d,%.6f,%.2f,%.2f,%.2f,%.5f,%.5f,%.5f,%.4f,%.4f,%.4f\n", frame, static_cast< double >( frame ) / session.fps, fire[ 0 ], fire[ 1 ], fire[ 2 ], control[ 0 ], control[ 1 ],
+			              control[ 2 ], extra[ 0 ], extra[ 1 ], extra[ 2 ] );
 		}
 	}
 	if( trace != nullptr )
