@@ -221,6 +221,102 @@ the whole frame, whatever the clip's alpha. At 0 it's the clip, with the clip's 
 
 ---
 
+## The colour organ (not in v0.1.0)
+
+> **Unreleased.** The colour organ is on the main branch only, and is not in the v0.1.0
+> download. It has never been run inside Resolume and has never listened to a real audio
+> device: every check feeds it recorded or synthetic audio through the audio library's test
+> path. It has not been built for Windows.
+
+The **Organ** group, after About, turns the wall into a 1970s three-channel colour organ.
+The music goes through a passive three-way crossover into bass, mid and treble. Each band
+goes through a diode and a capacitor into a control voltage. Each control voltage sets how
+early in every mains half-cycle a triac fires its lamp. Every bulb holds three filaments,
+one per channel, each behind a LEE gel and a frosted globe. The clip's brightness in each
+cell sets how strongly that bulb answers, so the picture stays visible as a pattern of
+lamps.
+
+None of what you see is animated by hand. It comes from the circuit and the filament:
+
+- **The bass pumps on the kicks.** The bass detector releases in 100 ms, so it lets go
+  between kicks, and the filament heats and cools with it.
+- **A cold lamp lags its first hit.** A 60 W filament takes about 97 ms to reach 90% from
+  cold.
+- **The treble glows steadily only when the hats are dense.** Its detector releases in
+  47 ms, and a 40 W filament cools fast enough to follow most hi-hat patterns. On five of
+  Resolume's six Beat loops the treble lamp flickers with the hats; on Beat 002 it holds
+  a steady glow. A bigger Wattage smooths it.
+
+### Start here
+
+1. **Organ → On.**
+2. **Audio Input →** your microphone, a loopback device, or **System default**. Until you
+   choose one the organ has nothing to listen to and the lamps stay dark. The status lamp
+   in the top-right corner shows amber. Choosing a device opens it, and that is when macOS
+   asks whether Resolume may use the microphone (not yet seen in Resolume).
+3. Play music. The status lamp turns green when audio arrives.
+4. Put a bright clip under it. A dark clip gives dark lamps: see below.
+
+### The controls
+
+**Organ** (Off, On; default Off). With it Off, the plugin renders exactly as v0.1.0 does
+and never touches the audio system.
+
+**Crossover Low** (40 to 500 Hz, default 220) and **Crossover High** (500 to 8000 Hz,
+default 1760). Bass is below Low, mid between the two, treble above High. Each is a
+second-order Linkwitz–Riley filter, 6 dB down at its corner. The defaults are ETI's 1974
+Project 428 split: up to the A below middle C, then three octaves.
+
+**Bass Gain, Mid Gain, Treble Gain** (−12 to +60 dB; defaults 48, 51 and 46 dB). How much
+of each band reaches its triac. More gain fires the triac earlier in each half-cycle, so
+the lamp runs hotter. The defaults suit full-frame footage at ordinary brightness.
+
+**Bass Gel, Mid Gel, Treble Gel** (defaults 106 Primary Red, 139 Primary Green, 119 Dark
+Blue). The gel in front of each channel's lamp, from LEE's published transmission curves:
+106 Primary Red, 139 Primary Green, 119 Dark Blue, 132 Medium Blue, 120 Deep Blue, 101
+Yellow, 105 Orange, 020 Medium Amber, or Clear. Where channels fire together their colours
+add, so red and green make yellow.
+
+**Audio Input** (None, System default, then up to 14 devices). Remembered by the device's
+name, so a composition reopens the same device even if the list has changed. A saved
+device that isn't connected shows as missing: the lamp blinks red, and nothing else is
+opened in its place.
+
+**Rescan Inputs.** Lists the devices again, for one plugged in after Resolume started.
+
+**Status Lamp** (Off, On; default On). A small disc in the top-right corner of the output:
+
+| | |
+| --- | --- |
+| amber | no input chosen, or the device is still opening |
+| green | audio is arriving |
+| steady red | the device is open but completely silent |
+| blinking red | the chosen device is missing or refused |
+
+**What the wall's controls do with the organ on.** Wattage, Mains, Ambient Temp, Columns,
+Rows, Gap, Pixel Mode, Glow, Bloom, Exposure and Mix work as before. Glass's tint still
+applies, but every bulb is drawn frosted. **Dimmer** and the wall's **Gels** do nothing:
+the triacs are the dimmers, and the organ's gels replace the wall's.
+
+### If the organ looks wrong
+
+**Everything is dark.** No Audio Input is chosen (the status lamp is amber), the device is
+silent (steady red), or the clip is dark. Each bulb's sensitivity is its cell's
+brightness, so a black cell never fires.
+
+**Only a few lines light up.** The clip is thin bright lines on black, like Resolume's Bass
+and Synth demo loops. Raise the gains by 20 to 30 dB, lift the clip with a levels effect
+ahead of the plugin, or use a finer grid.
+
+**The blue is weak.** 119 Dark Blue passes about a fifth of the light 106 Primary Red does
+from a tungsten filament. Try 132 Medium Blue, or raise Treble Gain.
+
+**The lamps lag the music.** They do: a filament takes tens of milliseconds to heat, and
+the audio is held 30 ms before use so that frames never run short of it. A bigger Wattage
+lags more.
+
+---
+
 ## How it works
 
 Four stages a frame, with every filament's temperature kept on the GPU between frames:
@@ -266,6 +362,11 @@ with other work:
 RGB gels triple the filaments. The state held is the grid's buffers only, 1.1 MB at 160 × 90,
 whatever the output resolution. Nothing was timed inside Resolume, and nothing was timed on
 Windows.
+
+With the colour organ on (not in v0.1.0) at the default grid, fed a synthetic track before
+each frame, a frame takes 0.72 ms at 1280 × 720 and 1920 × 1080 and 0.75 ms at 3840 × 2160.
+That includes the organ's audio processing on the CPU. Only the harness's handing over of the
+track is left out.
 
 ---
 
@@ -340,6 +441,9 @@ clock and the unit the plugin decided it is in, and on every lamp change the wir
 - **On a Mac I've only run it on Apple silicon** (an M4 Max, and CI's macOS runner), although
   the macOS build contains an Intel slice. On Windows, see the note at the top of this guide.
 - **No presets**, no preheat, no lamp-to-lamp variation, and no OpenFX version.
+- **The colour organ** (not in v0.1.0) models a 1974 circuit's printed part values, not a
+  measured light box. Its input filter, ideal diode and trigger are simplifications, which
+  the spec lists. It has never run in Resolume or heard a live device.
 - **There is a browser demo** at [filament-demo.stoatworks-labs.com](https://filament-demo.stoatworks-labs.com/).
   It's a port to a web page rather than the plugin: the shaders run in WebGL2, and the time
   bookkeeping and the lamp sizing are rewritten in JavaScript. The page lists what it doesn't

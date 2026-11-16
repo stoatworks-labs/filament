@@ -99,6 +99,28 @@ is a black body's; real tungsten is a little bluer. The shapes of the bulbs, the
 the bloom, the glass and the gels are drawn by eye. And thin, dim features in the clip
 vanish, because each bulb sees the average of its whole cell.
 
+## The colour organ (on main, not in a release yet)
+
+A 1970s three-channel colour organ in front of the wall. The music goes through a passive
+three-way crossover (bass, mid, treble), and each band through a diode and a capacitor into
+a control voltage. The control voltage sets how early in each mains half-cycle a triac fires.
+Every bulb holds three filaments, one per channel, each behind a LEE gel and a frosted
+globe. The clip's brightness in each cell sets how strongly that bulb answers. The
+detector values are ETI's Project 428 (1974), the trigger is the ramp-and-unijunction
+circuit of that era, the gels are LEE's measured spectra, and filament's own thermal
+model does the rest. None of the following is drawn:
+
+- **The bass pumps on the kicks.** On Resolume's Beat demo loops the bass filament swings
+  over 1000–2300 K (10th to 90th percentile).
+- **A cold lamp lags its first hit**: 97 ms to 90% from cold for a 60 W lamp.
+- **The treble settles to a steady glow when the hats are dense enough.** Of the six Beat
+  loops it does so on one (Beat 002: 2341–2817 K). On the others it follows the hats.
+
+Turn it on with **Organ → On**, then choose an **Audio Input**. It listens to a microphone
+or a loopback device through earshot, and stays dark until one is chosen. With the organ
+Off, the plugin renders exactly as v0.1.0 did and never touches the audio system.
+AGENTS.md has the circuit as modelled, what is verified and what is not.
+
 ## Controls
 
 | Group | |
@@ -106,6 +128,7 @@ vanish, because each bulb sees the average of its whole cell.
 | **Wall** | Columns (4–160), Rows (2–90), Gap, Pixel Mode, Glass (Clear, Frosted, Amber, Red, Green, Blue), Gels (Off, RGB: three filaments per cell behind red, green and blue gels). |
 | **Bulb** | Wattage (10–1000 W), Dimmer (Linear, Square Law, Triac), Mains (50 Hz / 230 V, 60 Hz / 120 V), Ambient Temp (0–200 °C). |
 | **Look** | Glow (the halo from the glass and reflector), Bloom, Exposure (±4 stops), Mix. |
+| **Organ** (unreleased, after About) | Organ (Off, On), Crossover Low (40–500 Hz, default 220), Crossover High (500–8000 Hz, default 1760), Bass, Mid and Treble Gain (−12 to +60 dB), Bass, Mid and Treble Gel (nine LEE gels and Clear; default 106 Primary Red, 139 Primary Green, 119 Dark Blue), Audio Input (remembered by name), Rescan Inputs, Status Lamp. |
 
 The defaults are a 48 × 27 wall of clear 40 W bulbs on 50 Hz square-law dimmers, with a
 modest halo and bloom. Square law because tungsten on a plain voltage dimmer is so
@@ -161,6 +184,35 @@ Render cost, `fitest --bench` (best of three, `glFinish` both sides, a shared GP
 (percentages of a 60 fps frame). The equation is solved in 34 to 147 substeps a frame,
 depending on the lamp; small lamps need the most.
 
+### The colour organ, measured offline (unreleased)
+
+`tools/verify.sh` runs these too, at both rasters and on the software renderer. Each reads
+the plugin's own state or picture:
+
+- **Crossover corners.** At the defaults, the bass band is −6.02 dB at 220.0000 Hz and the
+  treble at 1760.05 Hz. That was found by bisection on sines fed through earshot, within
+  1.1e-4 relative.
+- **Firing angle.** A steady control fires a 200 W lamp at 30°, 60°, 90°, 120° and 150°.
+  The lamp's RMS², read back out of its temperature, comes out as 0.98541, 0.89681,
+  0.70698, 0.44208 and 0.16978. Phase control's closed form, 1 − α/π + sin 2α / 2π, gives
+  0.98548, 0.89694, 0.70711, 0.44216 and 0.16981 (tolerances 0.00009–0.00026).
+- **Step response.** From cold, a 60 W lamp follows the lamp's ODE through the cut sine to
+  0.19 K (tolerance 0.76). It reaches 90% in 96.88 ms; the ODE says 96.88 ms.
+- **Detector.** Each band releases with ETI 428's R19·C, 100 ms and 47 ms, to 1e-13.
+- **Colour.** Each filament's light is its own gel's at its own temperature, to 4e-7.
+- **Frame rate and clock.** Every half-cycle's control is bit-identical at 30, 60 and
+  144 fps, and with the host's clock 5.8 days in.
+- **Resize.** A resize or a grid change mid-music keeps every filament exactly.
+- **Organ off is v0.1.0.** 13 renders, 30 piped frames and the first 19 parameters are
+  identical to a build of 91bef09. With the organ Off, the real CoreAudio backend sees no
+  engine, no device list and no audio thread.
+- **Negative controls and mutants.** Each organ check has a perturbation that makes it
+  fail. `tools/mutate.sh` makes 20 one-character mutants of the organ's C++ and GLSL, and
+  a check catches all 20. Every swept control moves the picture.
+
+Render cost with the organ on, the synthetic track fed before each frame: 0.72 ms at
+1280×720 and 1920×1080, 0.75 ms at 3840×2160 (0.25, 0.26 and 0.39 off).
+
 ### In Resolume Arena, on Windows
 
 A build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
@@ -177,6 +229,9 @@ doesn't show it (the harness measures it).
 ### Not done
 
 - **Never loaded into Resolume on macOS.**
+- **The colour organ has never been in Resolume at all**, never heard a live audio device
+  (every check feeds the audio in through earshot's test path), and has never been built on
+  Windows.
 - Seen only on Resolume's bundled demo clips, never on camera footage.
 - No OpenFX port, no factory presets.
 
@@ -230,7 +285,9 @@ traps, and where every tolerance comes from.
 
 MIT — see [LICENSE](LICENSE). The CIE 1931 colour-matching functions, the tungsten
 resistivity table and the heat-capacity fit are published data; their sources are in
-[ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+[ATTRIBUTIONS.md](ATTRIBUTIONS.md). The colour organ adds a vendored snapshot of
+Stoatworks earshot (MIT, with miniaudio inside it) in `external/earshot/`, and LEE
+Filters' published gel transmission curves in `tools/data/lee_gels.csv`.
 
 <!-- attributions:start -->
 This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
