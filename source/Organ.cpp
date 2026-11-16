@@ -354,7 +354,8 @@ void Organ::Design( const Settings& s )
 		const double parallel = kChargeOhms * kDischargeOhms / ( kChargeOhms + kDischargeOhms );
 		chargeTo[ c ]         = kDischargeOhms / ( kChargeOhms + kDischargeOhms );
 		chargeKeep[ c ]       = std::exp( -dt / ( parallel * C ) );
-		leakKeep[ c ]         = std::exp( -dt / ( kDischargeOhms * C ) );
+		const double release  = ( s.perturb & kPerturbFastRelease ) != 0 ? parallel : kDischargeOhms;
+		leakKeep[ c ]         = std::exp( -dt / ( release * C ) );
 	}
 }
 

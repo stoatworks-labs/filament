@@ -131,6 +131,7 @@ enum Perturb : int
 	kPerturbFloatClock  = 1024,///< the half-cycle grid from a float clock: --organclock must fail
 	kPerturbNoReset     = 2048,///< the ramp never reset at the zero crossing: --firing and --organstep must fail
 	kPerturbGelRotated  = 4096,///< each filament lit through the next channel's gel: --organcolour must fail
+	kPerturbFastRelease = 8192,///< the detector released through R16 || R19, not R19: --detector must fail
 };
 
 struct Settings

@@ -1379,6 +1379,7 @@ int runNegative( int W, int H )
 		{ lamp::kPerturbResizeClears, "a resize or regrid restarts the wall cold", runResize, "--resize" },
 		{ organ::kPerturbNoPrewarp, "organ: crossover corners not prewarped", runCrossover, "--crossover" },
 		{ organ::kPerturbButterworth, "organ: Butterworth Q 0.707 for LR2", runCrossover, "--crossover" },
+		{ organ::kPerturbFastRelease, "organ: detector released through R16||R19", runDetector, "--detector" },
 		{ organ::kPerturbLinearPower, "organ: conduction power linear in angle", runFiring, "--firing" },
 		{ organ::kPerturbNoReset, "organ: ramp never reset at zero crossings", runFiring, "--firing" },
 		{ organ::kPerturbNoReset, "organ: ramp never reset at zero crossings", runOrganStep, "--organstep" },
@@ -1712,6 +1713,7 @@ void usage()
 		"  checks that need no GL:\n"
 		"  --names             nothing the host will silently truncate\n"
 		"  --crossover         organ: each band's -6.02 dB point at its stated corner\n"
+		"  --detector          organ: each band's detector releases with ETI 428's R19 C\n"
 		"\n"
 		"  the organ's music (--out, --pipe, --bench, whenever Organ is On), fed through\n"
 		"  earshot's feed(); no audio device is ever opened:\n"
@@ -1760,7 +1762,7 @@ int main( int argc, char** argv )
 	const std::set< std::string > rendered = { "--steady",      "--colour",      "--rise",         "--fall",      "--ripple",       "--resize",
 		                                       "--firing",      "--organstep",   "--organframes",  "--organclock", "--organresize",  "--organcolour", "--organdevices",
 		                                       "--coreaudio",   "--negative" };
-	const std::set< std::string > offline  = { "--names", "--crossover" };
+	const std::set< std::string > offline  = { "--names", "--crossover", "--detector" };
 
 	//Every earshot Engine the harness's plugins build captures from a
 	//scripted backend: no step but --coreaudio's can reach an audio device.
@@ -1879,6 +1881,11 @@ int main( int argc, char** argv )
 			else if( check == "--crossover" )
 			{
 				runCrossover( 0, 0, perturb );
+				std::printf( "\n" );
+			}
+			else if( check == "--detector" )
+			{
+				runDetector( 0, 0, perturb );
 				std::printf( "\n" );
 			}
 			else

@@ -221,6 +221,7 @@ struct Audio
 	Wav wav;
 	double toneHertz = 1000.0;
 	double toneAmp   = 0.5;
+	int64_t toneStop = -1;///< the sample a Tone stops at; -1 never
 	int64_t fed      = 0;
 	bool begun       = false;
 	double origin    = 0.0;///< host time of the audio's time 0
@@ -232,7 +233,10 @@ struct Audio
 		{
 		case Kind::Track: return static_cast< float >( trackAt( n, rate ) );
 		case Kind::Silent: return 0.0f;
-		case Kind::Tone: return static_cast< float >( toneAmp * std::sin( 2.0 * lamp::kPi * toneHertz * static_cast< double >( n ) / rate ) );
+		case Kind::Tone:
+			if( toneStop >= 0 && n >= toneStop )
+				return 0.0f;
+			return static_cast< float >( toneAmp * std::sin( 2.0 * lamp::kPi * toneHertz * static_cast< double >( n ) / rate ) );
 		case Kind::Wav:
 		{
 			const int64_t frames = static_cast< int64_t >( wav.samples.size() ) / wav.channels;
@@ -674,6 +678,97 @@ int runCrossover( int, int, int perturb, bool quiet = false )
 			failures += report( std::fabs( rel ) <= tol, quiet, "%-16s set %7.2f Hz: -6.02 dB at %9.4f Hz, off %+.2e (tolerance %.1e: lock-in %.1e over a gain slope %.3f/ln f%s)",
 			                    c.what, c.set, f, rel, tol, gainErr, slope, c.bias > 0.0 ? ", the other section" : "" );
 		}
+	}
+	return failures;
+}
+
+//---------------------------------------------------------------------------
+// --detector (no GL): each band's detector releases with ETI 428's R19 C.
+//---------------------------------------------------------------------------
+int runDetector( int, int, int perturb, bool quiet = false )
+{
+	//A tone in the middle of each band for 0.3 s, stopped at a zero crossing
+	//(a whole number of periods at 48 kHz), then silence. Once the band's own
+	//ring-down is below the detector the diode is off and the node discharges
+	//through R19 alone: ln v falls on a straight line of slope -1 / ( R19 C ).
+	//The slope is fitted to the organ's own detector samples (recorded at the
+	//tap rate) over the 150 ms from 40 ms after the band last swung past 1%
+	//of its level.
+	const OrganKnobs defaults = organDefaults();
+	const double tones[ 3 ]   = { 100.0, 600.0, 6000.0 };//480, 80 and 8 samples a period
+	const char* names[ 3 ]    = { "bass", "mid", "treble" };
+	if( !quiet )
+		std::printf( "detector: a tone in each band stopped at a zero crossing; the release fitted to the organ's own detector (no GL)\n" );
+	int failures = 0;
+	for( int c = 0; c < 3; ++c )
+	{
+		organ::Organ o;
+		Audio a;
+		a.kind      = Audio::Kind::Tone;
+		a.toneHertz = tones[ c ];
+		a.toneAmp   = 0.5;
+		a.toneStop  = 14400;//0.3 s
+		organ::Settings s;
+		s.lowHertz  = defaults.low;
+		s.highHertz = defaults.high;
+		s.perturb   = perturb;
+		o.RecordForTest( true );
+		const double fps = 100.0;
+		std::vector< double > band, node;
+		for( int f = 0; f < 80; ++f )
+		{
+			const double end = f / fps;
+			a.feedTo( o, end + 1.0 / fps + organ::kReserveSeconds + kFeedLead );
+			o.Advance( end - 1.0 / fps, end, 50.0, 0, 2, s );
+			const std::vector< double >& b = o.RecordedForTest( 1 + c );
+			const std::vector< double >& d = o.RecordedForTest( 4 + c );
+			band.insert( band.end(), b.begin(), b.end() );
+			node.insert( node.end(), d.begin(), d.end() );
+		}
+		const double R = o.TapRateForTest();
+		double level   = 0.0;
+		for( double v : band )
+			level = std::max( level, std::fabs( v ) );
+		size_t last = 0;
+		for( size_t n = 0; n < band.size(); ++n )
+			if( std::fabs( band[ n ] ) > 0.01 * level )
+				last = n;
+		const size_t from = last + static_cast< size_t >( 0.040 * R );
+		const size_t to   = from + static_cast< size_t >( 0.150 * R );
+		if( to > node.size() || node[ to - 1 ] <= 0.0 )
+		{
+			failures += report( false, quiet, "%-6s detector: the recording ended before the window (%zu of %zu samples)", names[ c ], node.size(), to );
+			continue;
+		}
+		//Least squares of ln v against t, and the diode's margin: how close the
+		//band's tail came to the node over the window (it conducts only when
+		//-band exceeds the node).
+		double st = 0.0, sy = 0.0, stt = 0.0, sty = 0.0, margin = 0.0;
+		const double N = static_cast< double >( to - from );
+		for( size_t n = from; n < to; ++n )
+		{
+			const double t = static_cast< double >( n - from ) / R, y = std::log( node[ n ] );
+			st += t;
+			sy += y;
+			stt += t * t;
+			sty += t * y;
+			margin = std::max( margin, std::fabs( band[ n ] ) / node[ n ] );
+		}
+		const double slope = ( N * sty - st * sy ) / ( N * stt - st * st );
+		const double icept = ( sy - slope * st ) / N;
+		double resid       = 0.0;
+		for( size_t n = from; n < to; ++n )
+			resid = std::max( resid, std::fabs( std::log( node[ n ] ) - ( icept + slope * static_cast< double >( n - from ) / R ) ) );
+		const double tau  = -1.0 / slope;
+		const double want = organ::kDischargeOhms * organ::kDetectorFarads[ c ];
+		//A slope error e over the window's length Tw tilts the line by e Tw / 2
+		//at its ends; the fit's own residual bounds what it can hide. Plus the
+		//double arithmetic of the sums (N x 2^-52 relative).
+		const double Tw  = ( N - 1.0 ) / R;
+		const double tol = 2.0 * resid / ( Tw * std::fabs( slope ) ) + N * std::ldexp( 1.0, -52 );
+		failures += report( std::fabs( tau / want - 1.0 ) <= tol && margin < 1.0, quiet,
+		                    "%-6s %5.0f Hz tone: release tau %.4f ms; R19 x C%s = %.4f ms; off %+.1e (tolerance %.1e: fit residual %.1e over %.0f ms); the diode stayed off (|band| at most %.1e of the node)", names[ c ],
+		                    tones[ c ], tau * 1e3, c == 0 ? " (1.0 uF)" : " (0.47 uF)", want * 1e3, tau / want - 1.0, tol, resid, Tw * 1e3, margin );
 	}
 	return failures;
 }
