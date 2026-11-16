@@ -55,6 +55,13 @@ set(FFGL_BUILD_EXAMPLE_PLUGINS OFF CACHE BOOL "" FORCE)
 add_subdirectory(external/ffgl EXCLUDE_FROM_ALL)
 
 # ---------------------------------------------------------------------------
+# earshot, the colour organ's audio: a snapshot of ~/dev/earshot, unpatched
+# (external/earshot/SNAPSHOT). Only source/Organ.cpp includes it, and nothing
+# in it runs until the organ is first on.
+# ---------------------------------------------------------------------------
+add_subdirectory(external/earshot EXCLUDE_FROM_ALL)
+
+# ---------------------------------------------------------------------------
 # Everything the plugin is, as an OBJECT library so both the bundle and the
 # offline harness are built from exactly the same code.
 #
@@ -74,6 +81,9 @@ add_library(filament_core OBJECT
     source/Lamp.h
     source/Lamp.cpp
     source/PlanckTable.h
+    source/GelTable.h
+    source/Organ.h
+    source/Organ.cpp
     source/Controls.h
     source/Controls.cpp
     source/PassBuffer.h
@@ -85,7 +95,7 @@ add_library(filament_core OBJECT
 )
 
 target_include_directories(filament_core PUBLIC source)
-target_link_libraries(filament_core PUBLIC ffgl::sdk)
+target_link_libraries(filament_core PUBLIC ffgl::sdk earshot::earshot)
 target_compile_definitions(filament_core PUBLIC FILAMENT_VERSION="${PROJECT_VERSION}")
 set_target_properties(filament_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

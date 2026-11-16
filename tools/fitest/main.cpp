@@ -47,9 +47,15 @@
 
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
+#include <earshot/earshot.h>
+#include <earshot/testing.h>
+#include <mach-o/dyld.h>
+#include <mach/mach.h>
+#include <pthread.h>
 #include <zlib.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -59,10 +65,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
+#include <iterator>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -276,9 +287,14 @@ struct NamedParameter
 	float high;
 };
 
+bool isAbout( unsigned int index )
+{
+	return index >= Filament::PT_ABOUT_FIRST && index < Filament::PT_ABOUT_END;
+}
+
 const char* kindName( const NamedParameter& p )
 {
-	if( p.index >= Filament::PT_ABOUT_FIRST )
+	if( isAbout( p.index ) )
 		return "about";
 	switch( p.type )
 	{
@@ -416,6 +432,9 @@ struct Session
 	/// Render into an RGBA32F framebuffer rather than RGBA8. The probes are
 	/// read as float so their tolerances can be float-derived.
 	bool floatOutput = true;
+	/// Added to every frame's clock: --organclock runs the host's clock from
+	/// days in, where a float no longer resolves a mains cycle.
+	double clockOffset = 0.0;
 
 	GLuint sourceTexture = 0;
 	GLuint outputTexture = 0;
@@ -499,7 +518,7 @@ struct Session
 	bool renderAt( long frame )
 	{
 		plugin.SetClockScaleForTest( 1.0 );
-		plugin.SetTime( static_cast< double >( frame ) / fps );
+		plugin.SetTime( clockOffset + static_cast< double >( frame ) / fps );
 
 		glBindFramebuffer( GL_FRAMEBUFFER, outputFBO );
 		glViewport( 0, 0, width, height );
@@ -1333,6 +1352,10 @@ int runResize( int W, int H, int perturb, bool quiet = false )
 	return failures;
 }
 
+std::vector< unsigned char > buildCard( int width, int height, int64_t frame );
+
+#include "Organ.inc"
+
 //---------------------------------------------------------------------------
 // --negative
 //---------------------------------------------------------------------------
@@ -1353,6 +1376,17 @@ int runNegative( int W, int H )
 		{ lamp::kPerturbNoConduction, "the conduction term dropped", runSteady, "--steady" },
 		{ lamp::kPerturbTableShift, "the colour table read 5% hot", runColour, "--colour" },
 		{ lamp::kPerturbResizeClears, "a resize or regrid restarts the wall cold", runResize, "--resize" },
+		{ organ::kPerturbNoPrewarp, "organ: crossover corners not prewarped", runCrossover, "--crossover" },
+		{ organ::kPerturbButterworth, "organ: Butterworth Q 0.707 for LR2", runCrossover, "--crossover" },
+		{ organ::kPerturbLinearPower, "organ: conduction power linear in angle", runFiring, "--firing" },
+		{ organ::kPerturbNoReset, "organ: ramp never reset at zero crossings", runFiring, "--firing" },
+		{ organ::kPerturbNoReset, "organ: ramp never reset at zero crossings", runOrganStep, "--organstep" },
+		{ organ::kPerturbFrameSlope, "organ: control from the frame's audio", runOrganFrames, "--organframes" },
+		{ organ::kPerturbFloatClock, "organ: half-cycle grid on a float clock", runOrganClock, "--organclock" },
+		{ lamp::kPerturbResizeClears, "organ: a resize or regrid restarts it cold", runOrganResize, "--organresize" },
+		{ kNegMenuByIndex, "organ: device menu valued by index", runOrganDevices, "--organdevices" },
+		//Last: its plant really lists the devices, which loads CoreAudio.
+		{ kNegListAtConstruction, "organ: devices listed with the organ off", runCoreAudio, "--coreaudio" },
 	};
 	int failures = 0;
 	for( const Control& c : list )
@@ -1378,7 +1412,7 @@ int runNames()
 	std::set< std::string > seen;
 	for( const NamedParameter& p : listParameters( plugin ) )
 	{
-		if( p.index >= Filament::PT_ABOUT_FIRST )
+		if( isAbout( p.index ) )
 			continue;
 		failures += report( p.name.size() <= 16, false, "%-16s %2zu characters", p.name.c_str(), p.name.size() );
 		failures += report( seen.insert( p.name ).second, false, "%-16s unique", p.name.c_str() );
@@ -1449,7 +1483,7 @@ double benchAt( Filament& plugin, int width, int height, int frames, double fps,
 	Session session;
 	session.floatOutput = false;
 	for( const NamedParameter& p : listParameters( plugin ) )
-		if( p.index < Filament::PT_ABOUT_FIRST && p.type != FF_TYPE_BUFFER && p.type != FF_TYPE_EVENT && p.type != FF_TYPE_TEXT )
+		if( !isAbout( p.index ) && p.type != FF_TYPE_BUFFER && p.type != FF_TYPE_EVENT && p.type != FF_TYPE_TEXT )
 			session.plugin.SetFloatParameter( p.index, p.value );
 	session.fps = fps;
 	if( !session.begin( width, height ) )
@@ -1459,19 +1493,37 @@ double benchAt( Filament& plugin, int width, int height, int frames, double fps,
 	//the plugin's cost does not depend on what the frame holds.
 	const std::vector< unsigned char > card = buildCard( width, height, 0 );
 	const int warmup                        = 20;
+	//With the organ on, the synthetic track is fed before every frame, as a
+	//device's thread would deliver it; the feed is timed and taken off, so
+	//what is left is the plugin's own frame, earshot's update() included.
+	const bool organOn = session.plugin.GetFloatParameter( Filament::PT_ORGAN ) >= 0.5f;
+	Audio audio;
+	double fedSeconds = 0.0;
+	auto frameAt      = [ & ]( long frame ) {
+		if( organOn )
+		{
+			const auto a = std::chrono::steady_clock::now();
+			const double end = static_cast< double >( frame ) / session.fps;
+			audio.feedFrame( session.plugin.OrganForTest(), frame == 0 ? end - model::kNominalFrame : end - 1.0 / session.fps, end );
+			fedSeconds += std::chrono::duration< double >( std::chrono::steady_clock::now() - a ).count();
+		}
+		session.renderAt( frame );
+	};
+	session.upload( card );
 	for( int frame = 0; frame < warmup; ++frame )
-		session.render( frame, card );
+		frameAt( frame );
 	glFinish();
 
 	double best = 1e9;
 	for( int run = 0; run < 3; ++run )
 	{
+		fedSeconds       = 0.0;
 		const auto start = std::chrono::steady_clock::now();
 		for( int frame = 0; frame < frames; ++frame )
-			session.renderAt( warmup + run * frames + frame );
+			frameAt( warmup + run * frames + frame );
 		glFinish();
 		const auto end       = std::chrono::steady_clock::now();
-		const double seconds = std::chrono::duration< double >( end - start ).count();
+		const double seconds = std::chrono::duration< double >( end - start ).count() - fedSeconds;
 		best                 = std::min( best, seconds * 1000.0 / static_cast< double >( frames ) );
 	}
 	stateBytes = session.plugin.StateBytesForTest();
@@ -1506,8 +1558,13 @@ int runBench( Filament& plugin, int frames, double fps )
 		             ms / 16.667 * 100.0, substeps, static_cast< double >( bytes ) / 1048576.0 );
 	}
 	std::printf( "\nState is the grid's buffers only (two temperatures, the drive, the light, the\n"
-	             "bloom), so it does not grow with the output raster. Whatever the settings above\n"
-	             "were, they are what was measured; --set measures another.\n" );
+	             "bloom%s), so it does not grow with the output raster. Whatever the settings above\n"
+	             "were, they are what was measured; --set measures another.\n",
+	             plugin.GetFloatParameter( Filament::PT_ORGAN ) >= 0.5f ? ", the organ's two ramp buffers" : "" );
+	if( plugin.GetFloatParameter( Filament::PT_ORGAN ) >= 0.5f )
+		std::printf( "The organ was on: the harness's synthetic track fed through earshot before each\n"
+		             "frame, the feed's own time taken off; earshot's update() and the organ's audio\n"
+		             "are in the figure.\n" );
 	return 0;
 }
 
@@ -1520,7 +1577,7 @@ int dumpShaders( const std::string& dir )
 	const std::pair< const char*, std::string > files[] = {
 		{ "vertex.vert", shaders::Vertex() }, { "drive.frag", shaders::Drive() }, { "thermal.frag", shaders::Thermal() },
 		{ "fill.frag", shaders::Fill() },     { "regrid.frag", shaders::Regrid() }, { "blur.frag", shaders::Blur() },
-		{ "output.frag", shaders::Output() },
+		{ "output.frag", shaders::Output() }, { "organ_thermal.frag", shaders::OrganThermal() }, { "status_lamp.frag", shaders::StatusLamp() },
 	};
 	for( const auto& f : files )
 	{
@@ -1639,11 +1696,28 @@ void usage()
 		"  --fall              switch-off follows T^4 + conduction, not an exponential\n"
 		"  --ripple            triac ripple at exactly 2 x mains, bigger on a small lamp\n"
 		"  --resize            an output resize and a grid change keep the temperatures\n"
+		"  --firing            organ: a steady control's lamp RMS follows 1 - a/pi + sin 2a / 2pi\n"
+		"  --organstep         organ: a step of control from cold follows the lamp's ODE\n"
+		"  --organframes       organ: the music at 30, 60 and 144 fps agrees\n"
+		"  --organclock        organ: the music with the host clock 5.8 days in\n"
+		"  --organresize       organ: a resize and a grid change mid-music\n"
+		"  --organdevices      organ: the device menu, states and lamp (scripted backend)\n"
+		"  --coreaudio         organ off never reaches earshot or CoreAudio (REAL backend; run alone)\n"
 		"  --negative          every check above can fail\n"
-		"  --perturb BITS      run the checks verbosely against a perturbed model (bits in Lamp.h)\n"
+		"  --perturb BITS      run the checks verbosely against a perturbed model (bits in Lamp.h, Organ.h)\n"
 		"\n"
 		"  checks that need no GL:\n"
 		"  --names             nothing the host will silently truncate\n"
+		"  --crossover         organ: each band's -6.02 dB point at its stated corner\n"
+		"\n"
+		"  the organ's music (--out, --pipe, --bench, whenever Organ is On), fed through\n"
+		"  earshot's feed(); no audio device is ever opened:\n"
+		"  (default)           the synthetic track: kick, bass, chord stabs, hats at 120 BPM\n"
+		"  --wav PATH          a WAV file (PCM 16/24/32 or float), looped if short\n"
+		"  --silent            zeros\n"
+		"  --trace PATH        --out only: per frame, each channel's firing angle for a white\n"
+		"                      cell over the half-cycles that ended in it, and the mean output\n"
+		"  --trace-state       with --trace: the centre bulb's three filament temperatures instead\n"
 		"\n"
 		"  --bench             time ProcessOpenGL at 720p, 1080p and 4K, and the state held\n"
 		"  --dump-shaders DIR  write the exact GLSL the plugin compiles\n"
@@ -1655,6 +1729,8 @@ void usage()
 
 int main( int argc, char** argv )
 {
+	g_audioAtStart        = audioImages();//before anything: --coreaudio's baseline
+	g_audioThreadsAtStart = audioThreads();
 	std::string outPath = "/tmp/filament.png";
 	std::string scriptPath;
 	std::string dumpDir;
@@ -1670,11 +1746,21 @@ int main( int argc, char** argv )
 	bool wantBench = false;
 	bool wantPipe  = false;
 	bool allowNoGL = false;
+	std::string wavPath;
+	std::string tracePath;
+	bool silent     = false;
+	bool traceState = false;
 	std::vector< std::string > settings;
 	std::vector< std::string > checks;
 
-	const std::set< std::string > rendered = { "--steady", "--colour", "--rise", "--fall", "--ripple", "--resize", "--negative" };
-	const std::set< std::string > offline  = { "--names" };
+	const std::set< std::string > rendered = { "--steady",      "--colour",      "--rise",         "--fall",      "--ripple",       "--resize",
+		                                       "--firing",      "--organstep",   "--organframes",  "--organclock", "--organresize",  "--organdevices",
+		                                       "--coreaudio",   "--negative" };
+	const std::set< std::string > offline  = { "--names", "--crossover" };
+
+	//Every earshot Engine the harness's plugins build captures from a
+	//scripted backend: no step but --coreaudio's can reach an audio device.
+	organ::Organ::SetBackendFactoryForTest( scriptedFactory );
 
 	for( int i = 1; i < argc; ++i )
 	{
@@ -1725,6 +1811,14 @@ int main( int argc, char** argv )
 			wantPipe = true;
 		else if( argument == "--allow-no-gl" )
 			allowNoGL = true;
+		else if( argument == "--wav" && hasNext )
+			wavPath = argv[ ++i ];
+		else if( argument == "--silent" )
+			silent = true;
+		else if( argument == "--trace" && hasNext )
+			tracePath = argv[ ++i ];
+		else if( argument == "--trace-state" )
+			traceState = true;
 		else if( rendered.count( argument ) || offline.count( argument ) )
 			checks.push_back( argument );
 		else
@@ -1743,6 +1837,20 @@ int main( int argc, char** argv )
 
 	if( !dumpDir.empty() )
 		return dumpShaders( dumpDir );
+
+	Audio audio;
+	if( silent )
+		audio.kind = Audio::Kind::Silent;
+	if( !wavPath.empty() )
+	{
+		std::string error;
+		if( !readWav( wavPath, audio.wav, error ) )
+		{
+			std::fprintf( stderr, "--wav: %s\n", error.c_str() );
+			return 2;
+		}
+		audio.kind = Audio::Kind::Wav;
+	}
 
 	if( wantList )
 	{
@@ -1764,6 +1872,11 @@ int main( int argc, char** argv )
 				runNames();
 				std::printf( "\n" );
 			}
+			else if( check == "--crossover" )
+			{
+				runCrossover( 0, 0, perturb );
+				std::printf( "\n" );
+			}
 			else
 				needGL = true;
 		}
@@ -1781,6 +1894,9 @@ int main( int argc, char** argv )
 			}
 			else
 			{
+				//--coreaudio first: its claim is that NOTHING in the process has
+				//loaded CoreAudio, and --negative's last plant does.
+				std::stable_partition( checks.begin(), checks.end(), []( const std::string& c ) { return c == "--coreaudio"; } );
 				for( const std::string& check : checks )
 				{
 					if( check == "--steady" )
@@ -1795,6 +1911,20 @@ int main( int argc, char** argv )
 						runRipple( width, height, perturb );
 					else if( check == "--resize" )
 						runResize( width, height, perturb );
+					else if( check == "--firing" )
+						runFiring( width, height, perturb );
+					else if( check == "--organstep" )
+						runOrganStep( width, height, perturb );
+					else if( check == "--organframes" )
+						runOrganFrames( width, height, perturb );
+					else if( check == "--organclock" )
+						runOrganClock( width, height, perturb );
+					else if( check == "--organresize" )
+						runOrganResize( width, height, perturb );
+					else if( check == "--organdevices" )
+						runOrganDevices( width, height, perturb );
+					else if( check == "--coreaudio" )
+						runCoreAudio( width, height, perturb );
 					else if( check == "--negative" )
 						runNegative( width, height );
 					else
@@ -1833,6 +1963,17 @@ int main( int argc, char** argv )
 		return finish( 2 );
 	}
 	session.plugin.SetPerturbForTest( perturb );
+
+	//The organ's music, fed before each frame the organ is on.
+	auto feedOrgan = [ & ]( long frame ) {
+		if( session.plugin.GetFloatParameter( Filament::PT_ORGAN ) < 0.5f )
+		{
+			audio.off();
+			return;
+		}
+		const double end = static_cast< double >( frame ) / session.fps;
+		audio.feedFrame( session.plugin.OrganForTest(), frame == 0 ? end - model::kNominalFrame : end - 1.0 / session.fps, end );
+	};
 
 	if( wantBench )
 		return finish( runBench( session.plugin, frames < 40 ? 60 : frames, fps ) );
@@ -1900,6 +2041,7 @@ int main( int argc, char** argv )
 			//would, and an event is a press.
 			for( const Automation& a : automation )
 				session.plugin.SetFloatParameter( a.index, valueAt( a.track, index, a.type ) );
+			feedOrgan( index );
 
 			const bool ok = index != failRender && session.render( index, frame );
 			if( !ok )
@@ -1931,10 +2073,29 @@ int main( int argc, char** argv )
 		return finish( status );
 	}
 
+	FILE* trace = nullptr;
+	if( !tracePath.empty() )
+	{
+		trace = std::fopen( tracePath.c_str(), "w" );
+		if( trace == nullptr )
+		{
+			std::fprintf( stderr, "cannot write %s\n", tracePath.c_str() );
+			return finish( 2 );
+		}
+		if( traceState )
+		{
+			session.floatOutput = true;
+			session.plugin.SetProbeForTest( model::kProbeState );
+			std::fprintf( trace, "frame,seconds,fire_bass_deg,fire_mid_deg,fire_treble_deg,T_bass,T_mid,T_treble\n" );
+		}
+		else
+			std::fprintf( trace, "frame,seconds,fire_bass_deg,fire_mid_deg,fire_treble_deg,mean_r,mean_g,mean_b\n" );
+	}
 	if( !session.begin( width, height ) )
 		return finish( 1 );
 	for( int frame = 0; frame < frames; ++frame )
 	{
+		feedOrgan( frame );
 		bool ok = false;
 		if( source == "card" )
 			ok = session.render( frame, buildCard( width, height, frame ) );
@@ -1951,7 +2112,60 @@ int main( int argc, char** argv )
 		}
 		if( !ok )
 			return finish( 1 );
+		if( trace != nullptr )
+		{
+			//The half-cycles that ended inside this frame are final: their
+			//firing angle for a white cell (b = 1), averaged; 180 = never.
+			double fire[ 3 ] = { 0.0, 0.0, 0.0 };
+			int ended        = 0;
+			if( session.plugin.GetFloatParameter( Filament::PT_ORGAN ) >= 0.5f )
+			{
+				organ::Organ& o = session.plugin.OrganForTest();
+				double seconds = 0.0, phase0 = 0.0;
+				int n = 0;
+				session.plugin.LastFrameForTest( seconds, n, phase0 );
+				const double hz  = controls::MainsHertz( controls::OptionIndex( session.plugin.GetFloatParameter( Filament::PT_MAINS ), controls::kMainsCount ) );
+				const double end = static_cast< double >( frame ) / session.fps;
+				for( int r = 0; r < o.RowCount(); ++r )
+				{
+					const double close = static_cast< double >( o.FirstHalf() + r + 1 ) / ( 2.0 * hz );
+					if( close <= end - seconds || close > end )
+						continue;
+					const float* row = o.Rows() + static_cast< size_t >( r ) * organ::kRowPoints * 4;
+					for( int c = 0; c < 3; ++c )
+						fire[ c ] += 180.0 * std::min( firstCrossing( row, c, 0.5 ), 1.0 );
+					++ended;
+				}
+			}
+			for( double& f : fire )
+				f = ended > 0 ? f / ended : 180.0;
+			double extra[ 3 ] = { 0.0, 0.0, 0.0 };
+			if( traceState )
+			{
+				int x, y;
+				const int columns = static_cast< int >( std::lround( session.plugin.GetFloatParameter( Filament::PT_COLUMNS ) ) );
+				const int rows    = static_cast< int >( std::lround( session.plugin.GetFloatParameter( Filament::PT_ROWS ) ) );
+				session.cellPixel( columns / 2, rows / 2, columns, rows, x, y );
+				float px[ 4 ];
+				session.readPixel( x, y, px );
+				for( int c = 0; c < 3; ++c )
+					extra[ c ] = px[ c ];
+			}
+			else
+			{
+				const std::vector< unsigned char > img = session.readBack();
+				double sum[ 3 ]                        = { 0.0, 0.0, 0.0 };
+				for( size_t i = 0; i < img.size(); i += 4 )
+					for( int c = 0; c < 3; ++c )
+						sum[ c ] += img[ i + static_cast< size_t >( c ) ];
+				for( int c = 0; c < 3; ++c )
+					extra[ c ] = sum[ c ] / ( static_cast< double >( img.size() / 4 ) * 255.0 );
+			}
+			std::fprintf( trace, "%d,%.6f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f\n", frame, static_cast< double >( frame ) / session.fps, fire[ 0 ], fire[ 1 ], fire[ 2 ], extra[ 0 ], extra[ 1 ], extra[ 2 ] );
+		}
 	}
+	if( trace != nullptr )
+		std::fclose( trace );
 
 	const std::vector< unsigned char > image = session.readBack();
 	session.end();

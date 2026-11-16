@@ -43,4 +43,10 @@ std::string Regrid();
 std::string Blur();
 std::string Output();
 
+/// The colour organ's thermal pass (Organ.h): kFilament, then the organ's
+/// own library, then its body. Compiled on the first frame the organ is on.
+std::string OrganThermal();
+/// The organ's status lamp, drawn over the wall.
+std::string StatusLamp();
+
 } // namespace filament::shaders

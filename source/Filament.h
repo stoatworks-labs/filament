@@ -2,11 +2,13 @@
 
 #include "Lamp.h"
 #include "Model.h"
+#include "Organ.h"
 #include "PassBuffer.h"
 #include "StoatworksAboutParams.h"
 
 #include <FFGLSDK.h>
 
+#include <memory>
 #include <string>
 
 /**
@@ -68,6 +70,9 @@ public:
 	/// ponged), the drive, the light and the bloom, colour textures only.
 	size_t StateBytesForTest() const;
 
+	/// The colour organ, for the harness: feeding, forcing, recording.
+	filament::organ::Organ& OrganForTest() { return *organ; }
+
 	/// Everything the operator can reach, in the order Resolume shows them.
 	enum ParamID : FFUInt32
 	{
@@ -92,9 +97,27 @@ public:
 		PT_MIX,
 
 		//About. FFGL has no window, so the name, the version and the links are
-		//parameters the host draws. Last, so no saved composition's ids shift.
+		//parameters the host draws. Where v0.1.0 put them, so no saved
+		//composition's ids shift.
 		PT_ABOUT_FIRST,
-		PT_COUNT = PT_ABOUT_FIRST + stoatworks::about::kParamCount
+		PT_ABOUT_END = PT_ABOUT_FIRST + stoatworks::about::kParamCount,
+
+		//The colour organ (Organ.h). Appended after About, never renumbered:
+		//v0.1.0's ids are 0 .. PT_ABOUT_END - 1 and stay where they are.
+		PT_ORGAN = PT_ABOUT_END,
+		PT_CROSSOVER_LOW,
+		PT_CROSSOVER_HIGH,
+		PT_BASS_GAIN,
+		PT_MID_GAIN,
+		PT_TREBLE_GAIN,
+		PT_BASS_GEL,
+		PT_MID_GEL,
+		PT_TREBLE_GEL,
+		PT_AUDIO_INPUT,
+		PT_RESCAN,
+		PT_STATUS_LAMP,
+
+		PT_COUNT
 	};
 
 private:
@@ -102,6 +125,14 @@ private:
 	double nowSeconds();
 
 	void setFilamentUniforms( ffglex::FFGLShader& shader, int law, double ambient );
+
+	/// The organ's GL side, built on the first frame it is on. False if a
+	/// shader would not compile: the organ then stays off, and says so once.
+	bool ensureOrgan();
+	void releaseOrgan();
+	/// The device menu to the host; `raise` tells it the elements changed.
+	void publishOrganMenu( bool raise );
+	void drawStatusLamp( const GLint viewport[ 4 ], double now );
 
 	ffglex::FFGLShader driveShader;
 	ffglex::FFGLShader thermalShader;
@@ -118,6 +149,20 @@ private:
 	filament::PassBuffer bloomX;
 	filament::PassBuffer bloomY;
 	GLuint planckTexture = 0;
+
+	//--- the colour organ: nothing here exists until it is first on ---------
+	std::unique_ptr< filament::organ::Organ > organ;
+	ffglex::FFGLShader organShader;
+	ffglex::FFGLShader lampShader;
+	filament::PassBuffer ramp[ 2 ];  ///< each channel's ramp, ping-ponged
+	int rampCurrent      = 0;
+	bool rampFresh       = true;     ///< cleared to "no half-cycle" before first use
+	GLuint gelTexture     = 0;
+	GLuint controlTexture = 0;
+	bool organReady  = false;
+	bool organFailed = false;
+	int organMenuShown = -1;
+	bool rescanHeld    = false;
 
 	filament::lamp::Lamp lamp;
 	std::string lampKey;

@@ -430,6 +430,235 @@ void main()
 }
 )";
 
+//---------------------------------------------------------------------------
+// The colour organ (Organ.h). Its own two passes, so the six above are
+// compiled from the same bytes whether or not the organ ever runs.
+//
+// kOrgan is a second library, assembled after kFilament: the mains
+// waveform's energy between two moments of a half-cycle, the firing search,
+// and the light of a filament through a LEE gel.
+//---------------------------------------------------------------------------
+const char* const kOrgan = R"(
+//cos( pi y ) for y in [0, 2], from sinPi: the same plain arithmetic.
+float cosPi( float y )
+{
+	float z = y + 0.5;
+	if( z <= 1.0 )
+		return sinPi( z );
+	if( z <= 2.0 )
+		return -sinPi( z - 1.0 );
+	return sinPi( z - 2.0 );
+}
+
+//The integral of ( v / V_rms )^2 = 2 sin^2( pi u ) over [lo, hi] of a
+//half-cycle (u from its zero crossing, 0..1): hi - lo - ( sin 2 pi hi -
+//sin 2 pi lo ) / 2 pi, in the product form so a short substep loses nothing
+//to cancellation. Over [u, 1] it is 1 - a/pi + sin( 2a ) / 2pi, a = pi u:
+//the phase-control closed form.
+float conducted( float lo, float hi )
+{
+	if( hi <= lo )
+		return 0.0;
+	float d = hi - lo;
+	if( ( Perturb & 256 ) != 0 )
+		return d;//the negative control: full power for the time conducting
+	return d - cosPi( lo + hi ) * sinPi( d ) / kPi;
+}
+
+//The light of a filament at T through gel g: the gel table's row times the
+//unfiltered luminance from the Planck table, each interpolated by hand.
+uniform sampler2D Gels;        //( r / Y, g / Y, b / Y, Y_gel / Y ) per gel row
+vec3 gelEmission( float T, int g )
+{
+	float x = clamp( ( T - PlanckFirst ) / PlanckStep, 0.0, float( PlanckCount - 1 ) - 0.0001 );
+	int i   = int( floor( x ) );
+	float t = x - float( i );
+	vec4 a  = texelFetch( Gels, ivec2( i, g ), 0 );
+	vec4 b  = texelFetch( Gels, ivec2( i + 1, g ), 0 );
+	float la = texelFetch( Planck, ivec2( i, 0 ), 0 ).a;
+	float lb = texelFetch( Planck, ivec2( i + 1, 0 ), 0 ).a;
+	return ( a.rgb + ( b.rgb - a.rgb ) * t ) * exp2( la + ( lb - la ) * t );
+}
+)";
+
+//---------------------------------------------------------------------------
+// The organ's thermal pass. One texel per bulb, three filaments per bulb
+// (bass, mid, treble), each its own triac. Per substep, the drive is the
+// EXACT mean of the phase-cut sine over the substep, so a half-cycle's
+// energy is the closed form whatever the substep grid. Three targets: the
+// temperatures, the light through the gels averaged over the frame, and each
+// channel's ramp at the frame's end with the half-cycle it belongs to.
+//---------------------------------------------------------------------------
+const char* const kOrganThermalBody = R"(
+uniform sampler2D State;       //( T bass, T mid, T treble, luma ) last frame
+uniform sampler2D Drive;       //.a: the cell's luma, the share of each channel's control this bulb gets
+uniform sampler2D Ramp;        //( ramp bass, mid, treble, half-cycle tag ) at last frame's end
+uniform sampler2D Control;     //row r, point j: the integral of gain x control to j / 16 of half-cycle r
+uniform ivec3 GelIndex;
+uniform int Substeps;
+uniform float StepSeconds;
+uniform float StepCycles;      //StepSeconds x mains hertz
+uniform float Phase0;          //mains cycles at the frame's start, fractional, reduced in double
+uniform float Tag0;            //row 0's half-cycle number, mod 2^22, from the CPU
+uniform int Rows;
+
+layout( location = 0 ) out vec4 stateOut;
+layout( location = 1 ) out vec4 lightOut;
+layout( location = 2 ) out vec4 rampOut;
+
+vec3 point( int row, int j )
+{
+	return texelFetch( Control, ivec2( j, min( row, Rows - 1 ) ), 0 ).rgb;
+}
+
+//The integral at u in [0, 1] of half-cycle `row`, linear between its points.
+vec3 integralAt( int row, float u )
+{
+	float x = clamp( u, 0.0, 1.0 ) * 16.0;
+	int j   = min( int( floor( x ) ), 15 );
+	vec3 a  = point( row, j );
+	vec3 b  = point( row, j + 1 );
+	return a + ( b - a ) * ( x - float( j ) );
+}
+
+//Where each channel's integral first reaches theta: the firing point as a
+//fraction of the half-cycle; 2.0 where it never does.
+vec3 firing( int row, vec3 theta )
+{
+	vec3 u     = vec3( 2.0 );
+	vec3 a     = point( row, 0 );
+	bvec3 done = bvec3( false );
+	for( int c = 0; c < 3; ++c )
+		if( a[ c ] >= theta[ c ] )
+		{
+			u[ c ]    = 0.0;
+			done[ c ] = true;
+		}
+	for( int j = 0; j < 16; ++j )
+	{
+		vec3 b = point( row, j + 1 );
+		for( int c = 0; c < 3; ++c )
+			if( !done[ c ] && b[ c ] >= theta[ c ] )
+			{
+				float span = b[ c ] - a[ c ];
+				float t    = span > 0.0 ? clamp( ( theta[ c ] - a[ c ] ) / span, 0.0, 1.0 ) : 0.0;
+				u[ c ]     = ( float( j ) + t ) / 16.0;
+				done[ c ]  = true;
+			}
+		a = b;
+	}
+	return u;
+}
+
+void main()
+{
+	ivec2 p    = ivec2( gl_FragCoord.xy );
+	vec4 state = texelFetch( State, p, 0 );
+	float b    = texelFetch( Drive, p, 0 ).a;
+	vec4 ramp  = texelFetch( Ramp, p, 0 );
+
+	//The ramps restart at every zero crossing; one that ended last frame in
+	//this frame's first half-cycle carries on from where it was.
+	float first  = floor( 2.0 * Phase0 );
+	float uStart = 2.0 * Phase0 - first;
+	vec3 carried = ramp.a == Tag0 ? ramp.rgb : vec3( 0.0 );
+	if( ( Perturb & 2048 ) != 0 )
+		carried = ramp.rgb;//the negative control: a ramp never reset
+	vec3 begin   = integralAt( 0, uStart );
+
+	//Each channel fires when b x its integral, plus what was carried, reaches
+	//1/2: a steady control of 1 fires at 90 degrees.
+	float share = max( b, 1e-30 );
+	int row     = 0;
+	vec3 fire   = b > 0.0 ? firing( 0, begin + ( 0.5 - carried ) / share ) : vec3( 2.0 );
+
+	vec3 T     = state.rgb;
+	vec3 light = vec3( 0.0 );
+	for( int k = 0; k < Substeps; ++k )
+	{
+		float w0 = 2.0 * ( Phase0 + float( k ) * StepCycles );
+		float w1 = 2.0 * ( Phase0 + float( k + 1 ) * StepCycles );
+		float h0 = floor( w0 );
+		float u0 = w0 - h0;
+		int r1   = int( floor( w1 ) - first );
+		//The substep's energy: the part in this half-cycle, then (if it
+		//crosses a zero) the part in the next, whose firing is found first.
+		vec3 e = vec3( 0.0 );
+		float end0 = r1 > row ? 1.0 : w1 - h0;
+		for( int c = 0; c < 3; ++c )
+			e[ c ] = conducted( max( u0, fire[ c ] ), end0 );
+		if( r1 > row )
+		{
+			row  = r1;
+			fire = b > 0.0 ? firing( row, vec3( 0.5 / share ) ) : vec3( 2.0 );
+			if( ( Perturb & 2048 ) != 0 )
+				fire = vec3( 0.0 );
+			float u1 = w1 - floor( w1 );
+			for( int c = 0; c < 3; ++c )
+				e[ c ] += conducted( fire[ c ], u1 );
+		}
+		vec3 v2 = e / max( w1 - w0, 1e-30 );
+
+		for( int c = 0; c < 3; ++c )
+		{
+			float t  = T[ c ];
+			float k1 = derivative( t, v2[ c ] );
+			float k2 = derivative( t + 0.5 * StepSeconds * k1, v2[ c ] );
+			float k3 = derivative( t + 0.5 * StepSeconds * k2, v2[ c ] );
+			float k4 = derivative( t + StepSeconds * k3, v2[ c ] );
+			T[ c ]   = clamp( t + StepSeconds / 6.0 * ( k1 + 2.0 * k2 + 2.0 * k3 + k4 ), 100.0, 3695.0 );
+		}
+		light += gelEmission( T.r, GelIndex.r ) + gelEmission( T.g, GelIndex.g ) + gelEmission( T.b, GelIndex.b );
+	}
+	if( Substeps == 0 )
+		light = gelEmission( T.r, GelIndex.r ) + gelEmission( T.g, GelIndex.g ) + gelEmission( T.b, GelIndex.b );
+	else
+		light /= float( Substeps );
+
+	//Each ramp at the frame's end, tagged with its half-cycle.
+	float wEnd = 2.0 * ( Phase0 + float( Substeps ) * StepCycles );
+	int rEnd   = Substeps > 0 ? int( floor( wEnd ) - first ) : 0;
+	float uEnd = Substeps > 0 ? wEnd - floor( wEnd ) : uStart;
+	vec3 rampEnd = rEnd == 0 ? carried + b * ( integralAt( 0, uEnd ) - begin ) : b * integralAt( rEnd, uEnd );
+
+	stateOut = vec4( T, b );
+	lightOut = vec4( light, 1.0 );
+	rampOut  = vec4( rampEnd, mod( Tag0 + float( rEnd ), 4194304.0 ) );//the CPU's tag modulus, 2^22
+}
+)";
+
+//---------------------------------------------------------------------------
+// The organ's status lamp: a disc in the corner, drawn over the wall only
+// while the organ is on and the Status Lamp is.
+//---------------------------------------------------------------------------
+const char* const kStatusLampBody = R"(
+uniform vec3 LampColour;
+uniform vec2 LampCentre;       //framebuffer pixels
+uniform float LampRadius;      //pixels
+
+out vec4 fragColor;
+
+void main()
+{
+	float r = length( gl_FragCoord.xy - LampCentre );
+	if( r > LampRadius + 2.0 )
+		discard;
+	//A dark rim a pixel and a half wide, so it reads on a lit wall.
+	float disc = clamp( LampRadius + 0.5 - r, 0.0, 1.0 );
+	float core = clamp( LampRadius - 1.0 - r, 0.0, 1.0 );
+	fragColor  = vec4( LampColour * core, disc );
+}
+)";
+
+std::string assembleOrgan( const char* body )
+{
+	std::string s = kVersion;
+	s += kFilament;
+	s += kOrgan;
+	s += body;
+	return s;
+}
+
 std::string assemble( const char* body, bool withFilament )
 {
 	std::string s = kVersion;
@@ -467,6 +696,16 @@ std::string Blur()
 std::string Output()
 {
 	return assemble( kOutputBody, true );
+}
+std::string OrganThermal()
+{
+	return assembleOrgan( kOrganThermalBody );
+}
+std::string StatusLamp()
+{
+	std::string s = kVersion;
+	s += kStatusLampBody;
+	return s;
 }
 
 } // namespace filament::shaders

@@ -2,8 +2,10 @@
 
 #include "Controls.h"
 #include "Diag.h"
+#include "GelTable.h"
 #include "Lamp.h"
 #include "Model.h"
+#include "Organ.h"
 #include "PlanckTable.h"
 #include "Shaders.h"
 
@@ -37,6 +39,14 @@ namespace
 /// Frames that must agree before the host's clock unit is settled.
 constexpr int kClockVotes = 4;
 
+/// The organ's ramps are tagged with their half-cycle's number modulo this,
+/// so a tag is an exact float (and wraps once in 11 hours at 50 Hz).
+constexpr int64_t kTagModulus = int64_t( 1 ) << 22;
+
+static_assert( filament::gels::kRowCount == filament::planck::kCount, "the gel table is on the Planck table's grid" );
+static_assert( filament::gels::kFirstKelvin == filament::planck::kFirstKelvin && filament::gels::kStepKelvin == filament::planck::kStepKelvin,
+               "the gel table is on the Planck table's grid" );
+
 double wallSeconds()
 {
 	using namespace std::chrono;
@@ -52,7 +62,8 @@ std::string glStringOrUnknown( GLenum name )
 } // namespace
 
 //---------------------------------------------------------------------------
-Filament::Filament()
+Filament::Filament() :
+	organ( std::make_unique< organ::Organ >() )
 {
 	SetMinInputs( 1 );
 	SetMaxInputs( 1 );
@@ -81,6 +92,21 @@ Filament::Filament()
 	params[ PT_BLOOM ]    = 0.35f;
 	params[ PT_EXPOSURE ] = 0.5f;
 	params[ PT_MIX ]      = 1.0f;
+
+	//The colour organ: off, so a v0.1.0 composition renders as it did. Its
+	//defaults were chosen on Resolume's demo music (AGENTS.md, "Decisions").
+	params[ PT_ORGAN ]          = 0.0f;//Off
+	params[ PT_CROSSOVER_LOW ]  = organ::CrossoverLowParam( 200.0 );
+	params[ PT_CROSSOVER_HIGH ] = organ::CrossoverHighParam( 2000.0 );
+	params[ PT_BASS_GAIN ]      = organ::GainParam( 24.0 );
+	params[ PT_MID_GAIN ]       = organ::GainParam( 24.0 );
+	params[ PT_TREBLE_GAIN ]    = organ::GainParam( 24.0 );
+	params[ PT_BASS_GEL ]       = 0.0f;//106 Primary Red
+	params[ PT_MID_GEL ]        = 1.0f;//139 Primary Green
+	params[ PT_TREBLE_GEL ]     = 2.0f;//119 Dark Blue
+	params[ PT_AUDIO_INPUT ]    = 0.0f;//None
+	params[ PT_RESCAN ]         = 0.0f;
+	params[ PT_STATUS_LAMP ]    = 1.0f;//On
 
 	//---------------------------------------------------------------------
 	// Declaration. Every STANDARD parameter is a plain 0..1 float: SetParamInfo
@@ -128,8 +154,30 @@ Filament::Filament()
 		for( const auto& b : stoatworks::about::buttons() )
 			SetParamInfo( aboutId++, b.label, FF_TYPE_EVENT, false );
 	}
-	for( FFUInt32 i = PT_ABOUT_FIRST; i < PT_COUNT; ++i )
+	for( FFUInt32 i = PT_ABOUT_FIRST; i < PT_ABOUT_END; ++i )
 		SetParamGroup( i, "About" );
+
+	// The colour organ, after About because ids are never renumbered.
+	// Declaring the device menu lists NO devices: it holds only the entries
+	// that need no enumeration until the first frame the organ is on.
+	declareOptions( PT_ORGAN, "Organ", organ::kSwitchCount, organ::SwitchName );
+	SetParamInfof( PT_CROSSOVER_LOW, "Crossover Low", FF_TYPE_STANDARD );
+	SetParamInfof( PT_CROSSOVER_HIGH, "Crossover High", FF_TYPE_STANDARD );
+	SetParamInfof( PT_BASS_GAIN, "Bass Gain", FF_TYPE_STANDARD );
+	SetParamInfof( PT_MID_GAIN, "Mid Gain", FF_TYPE_STANDARD );
+	SetParamInfof( PT_TREBLE_GAIN, "Treble Gain", FF_TYPE_STANDARD );
+	declareOptions( PT_BASS_GEL, "Bass Gel", organ::GelCount(), organ::GelName );
+	declareOptions( PT_MID_GEL, "Mid Gel", organ::GelCount(), organ::GelName );
+	declareOptions( PT_TREBLE_GEL, "Treble Gel", organ::GelCount(), organ::GelName );
+	SetOptionParamInfo( PT_AUDIO_INPUT, "Audio Input", organ::kInputSlots, 0.0f );
+	publishOrganMenu( false );
+	// The keys are 23-bit integers; a host that clamps an option's value to
+	// its range must not clamp them.
+	SetParamRange( PT_AUDIO_INPUT, 0.0f, 8388608.0f );
+	SetParamInfo( PT_RESCAN, "Rescan Inputs", FF_TYPE_EVENT, false );
+	declareOptions( PT_STATUS_LAMP, "Status Lamp", organ::kSwitchCount, organ::SwitchName );
+	for( FFUInt32 i = PT_ORGAN; i < PT_COUNT; ++i )
+		SetParamGroup( i, "Organ" );
 
 	FFGLLog::LogToHost( "Created Filament effect" );
 
@@ -333,6 +381,15 @@ FFResult Filament::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	const float exposure = model::kExposureGain * std::exp2( controls::ExposureStops( params[ PT_EXPOSURE ] ) );
 	const float mixAmount = controls::Amount( params[ PT_MIX ] );
 
+	//The colour organ, on the first frame it is asked for and not before:
+	//with it off, nothing below touches earshot, CoreAudio or its GL.
+	const bool organOn = controls::OptionIndex( params[ PT_ORGAN ], organ::kSwitchCount ) == 1 && ensureOrgan();
+	if( !organOn )
+	{
+		organ->Deactivate();
+		rampFresh = true;
+	}
+
 	//The lamp, and how finely its ODE has to be stepped: recomputed only when
 	//something it depends on moves (Stiffness scans the whole range).
 	const std::string key = std::to_string( watts ) + "/" + std::to_string( hertz ) + "/" + std::to_string( ambient );
@@ -400,6 +457,28 @@ FFResult Filament::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 		}
 		current = 1 - current;
 		fill    = ( perturb & lamp::kPerturbResizeClears ) != 0;
+
+		//The organ's ramps carry across too, the same way.
+		PassBuffer& rampLive  = ramp[ rampCurrent ];
+		PassBuffer& rampOther = ramp[ 1 - rampCurrent ];
+		if( organOn && !rampFresh && rampLive.IsValid() )
+		{
+			if( !rampOther.Ensure( columns, rows, GL_RGBA32F, PassBuffer::Sampling::Nearest ) )
+			{
+				diag::error( "could not allocate the organ's ramps at " + std::to_string( columns ) + "x" + std::to_string( rows ) );
+				return FF_FAIL;
+			}
+			ScopedFBOBinding fbo( rampOther.GetGLID(), ScopedFBOBinding::RB_REVERT );
+			rampOther.ResizeViewPort();
+			ScopedShaderBinding shader( regridShader.GetGLID() );
+			ScopedSamplerActivation sampler( 0 );
+			Scoped2DTextureBinding texture( rampLive.TextureID() );
+			regridShader.Set( "State", 0 );
+			regridShader.Set( "OldGrid", static_cast< float >( oldColumns ), static_cast< float >( oldRows ) );
+			regridShader.Set( "NewGrid", static_cast< float >( columns ), static_cast< float >( rows ) );
+			quad.Draw();
+			rampCurrent = 1 - rampCurrent;
+		}
 	}
 	if( rasterChanged && ( perturb & lamp::kPerturbResizeClears ) != 0 )
 		fill = true;//the negative control: the photofinish bug, on purpose
@@ -414,6 +493,32 @@ FFResult Filament::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	{
 		diag::error( "could not allocate the grid buffers at " + std::to_string( columns ) + "x" + std::to_string( rows ) );
 		return FF_FAIL;
+	}
+	if( organOn )
+	{
+		//The ramps live at the grid's raster. A new allocation, or a first
+		//use, starts every ramp at "no half-cycle yet".
+		//Only the ramp read this frame has to hold anything; the other is
+		//the write target.
+		PassBuffer& rampLive = ramp[ rampCurrent ];
+		const bool kept      = rampLive.IsValid() && static_cast< int >( rampLive.GetWidth() ) == columns && static_cast< int >( rampLive.GetHeight() ) == rows;
+		for( PassBuffer& b : ramp )
+			if( !b.Ensure( columns, rows, GL_RGBA32F, PassBuffer::Sampling::Nearest ) )
+			{
+				diag::error( "could not allocate the organ's ramps at " + std::to_string( columns ) + "x" + std::to_string( rows ) );
+				return FF_FAIL;
+			}
+		rampFresh = rampFresh || !kept;
+		if( rampFresh )
+		{
+			const GLfloat none[ 4 ] = { 0.0f, 0.0f, 0.0f, -1.0f };
+			for( PassBuffer& b : ramp )
+			{
+				ScopedFBOBinding fbo( b.GetGLID(), ScopedFBOBinding::RB_REVERT );
+				glClearBufferfv( GL_COLOR, 0, none );
+			}
+			rampFresh = false;
+		}
 	}
 
 	if( fill )
@@ -443,9 +548,98 @@ FFResult Filament::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	}
 
 	//---------------------------------------------------------------------
-	// 2. Thermal: the ODE over the frame, to the other state buffer and the
-	// light buffer at once.
+	// The organ's audio, on the CPU: every sample of the frame through the
+	// crossover and the detectors, then each half-cycle's control integral,
+	// to a texture the organ's thermal pass searches.
 	//---------------------------------------------------------------------
+	float tag0     = 0.0f;
+	int controlRows = 0;
+	if( organOn )
+	{
+		organ->Activate();
+		if( organ->ListCount() != organMenuShown )
+			publishOrganMenu( true );
+		organ::Settings settings;
+		settings.lowHertz    = organ::CrossoverLowHertz( params[ PT_CROSSOVER_LOW ] );
+		settings.highHertz   = organ::CrossoverHighHertz( params[ PT_CROSSOVER_HIGH ] );
+		settings.gainDb[ 0 ] = organ::GainDb( params[ PT_BASS_GAIN ] );
+		settings.gainDb[ 1 ] = organ::GainDb( params[ PT_MID_GAIN ] );
+		settings.gainDb[ 2 ] = organ::GainDb( params[ PT_TREBLE_GAIN ] );
+		settings.perturb     = perturb;
+
+		//The half-cycles exactly as the shader will number them: from the
+		//float Phase0 it is handed, so a row is never a half-cycle off.
+		const double phase0f = static_cast< double >( static_cast< float >( phase0 ) );
+		double cycle         = std::floor( start * hertz );
+		if( ( perturb & organ::kPerturbFloatClock ) != 0 )
+			cycle = std::floor( static_cast< double >( static_cast< float >( start ) ) * hertz );//the negative control
+		const int64_t firstHalf = 2 * static_cast< int64_t >( cycle ) + static_cast< int64_t >( std::floor( 2.0 * phase0f ) );
+		const double cyclesF    = static_cast< double >( static_cast< float >( h * hertz ) ) * substeps;
+		const int halves        = static_cast< int >( std::floor( 2.0 * ( phase0f + cyclesF ) ) - std::floor( 2.0 * phase0f ) ) + 2;
+		organ->Advance( start, now, hertz, firstHalf, halves, settings );
+
+		controlRows = organ->RowCount();
+		glBindTexture( GL_TEXTURE_2D, controlTexture );
+		glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, organ::kRowPoints, controlRows, GL_RGBA, GL_FLOAT, organ->Rows() );
+		glBindTexture( GL_TEXTURE_2D, 0 );
+		tag0 = static_cast< float >( ( ( firstHalf % kTagModulus ) + kTagModulus ) % kTagModulus );
+	}
+
+	//---------------------------------------------------------------------
+	// 2. Thermal: the ODE over the frame, to the other state buffer and the
+	// light buffer at once. The organ has its own pass (three filaments, the
+	// triacs and the gels), so this one is compiled from v0.1.0's bytes.
+	//---------------------------------------------------------------------
+	if( organOn )
+	{
+		ScopedFBOBinding fbo( dst.GetGLID(), ScopedFBOBinding::RB_REVERT );
+		PassBuffer& rampOut = ramp[ 1 - rampCurrent ];
+		glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, light.TextureID(), 0 );
+		glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, rampOut.TextureID(), 0 );
+		const GLenum targets[ 3 ] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+		glDrawBuffers( 3, targets );
+		dst.ResizeViewPort();
+		{
+			ScopedShaderBinding shader( organShader.GetGLID() );
+			ScopedSamplerActivation sampler0( 0 );
+			Scoped2DTextureBinding stateTexture( src.TextureID() );
+			ScopedSamplerActivation sampler1( 1 );
+			Scoped2DTextureBinding driveTexture( drive.TextureID() );
+			ScopedSamplerActivation sampler2( 2 );
+			Scoped2DTextureBinding planckBinding( planckTexture );
+			ScopedSamplerActivation sampler3( 3 );
+			Scoped2DTextureBinding rampTexture( ramp[ rampCurrent ].TextureID() );
+			ScopedSamplerActivation sampler4( 4 );
+			Scoped2DTextureBinding controlBinding( controlTexture );
+			ScopedSamplerActivation sampler5( 5 );
+			Scoped2DTextureBinding gelBinding( gelTexture );
+
+			setFilamentUniforms( organShader, law, ambient );
+			organShader.Set( "State", 0 );
+			organShader.Set( "Drive", 1 );
+			organShader.Set( "Planck", 2 );
+			organShader.Set( "Ramp", 3 );
+			organShader.Set( "Control", 4 );
+			organShader.Set( "Gels", 5 );
+			organShader.Set( "Substeps", substeps );
+			organShader.Set( "StepSeconds", static_cast< float >( h ) );
+			organShader.Set( "StepCycles", static_cast< float >( h * hertz ) );
+			organShader.Set( "Phase0", static_cast< float >( phase0 ) );
+			organShader.Set( "Tag0", tag0 );
+			organShader.Set( "Rows", controlRows );
+			glUniform3i( organShader.FindUniform( "GelIndex" ),
+			             controls::OptionIndex( params[ PT_BASS_GEL ], organ::GelCount() ),
+			             controls::OptionIndex( params[ PT_MID_GEL ], organ::GelCount() ),
+			             controls::OptionIndex( params[ PT_TREBLE_GEL ], organ::GelCount() ) );
+			quad.Draw();
+		}
+		const GLenum one[ 1 ] = { GL_COLOR_ATTACHMENT0 };
+		glDrawBuffers( 1, one );
+		glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, 0, 0 );
+		glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, 0, 0 );
+		rampCurrent = 1 - rampCurrent;
+	}
+	else
 	{
 		ScopedFBOBinding fbo( dst.GetGLID(), ScopedFBOBinding::RB_REVERT );
 		glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, light.TextureID(), 0 );
@@ -538,7 +732,8 @@ FFResult Filament::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 		outputShader.Set( "Size", static_cast< float >( hostViewport[ 2 ] ), static_cast< float >( hostViewport[ 3 ] ) );
 		outputShader.Set( "Gap", gap );
 		outputShader.Set( "PixelMode", pixelMode ? 1 : 0 );
-		outputShader.Set( "Frosted", controls::GlassFrosted( glass ) ? 1 : 0 );
+		//The organ's lamps sit behind a frosted panel, whatever the Glass.
+		outputShader.Set( "Frosted", organOn || controls::GlassFrosted( glass ) ? 1 : 0 );
 		outputShader.Set( "Glass", tint[ 0 ], tint[ 1 ], tint[ 2 ] );
 		outputShader.Set( "Glow", glow );
 		outputShader.Set( "BloomAmount", bloom );
@@ -551,7 +746,127 @@ FFResult Filament::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 		quad.Draw();
 	}
 
+	if( organOn && controls::OptionIndex( params[ PT_STATUS_LAMP ], organ::kSwitchCount ) == 1 )
+		drawStatusLamp( hostViewport, now );
+
 	return FF_SUCCESS;
+}
+
+//---------------------------------------------------------------------------
+// The colour organ's GL side.
+//---------------------------------------------------------------------------
+bool Filament::ensureOrgan()
+{
+	if( organReady )
+		return true;
+	if( organFailed )
+		return false;
+
+	const std::string vertex = shaders::Vertex();
+	if( !organShader.Compile( vertex, shaders::OrganThermal() ) || !lampShader.Compile( vertex, shaders::StatusLamp() ) )
+	{
+		diag::error( "the organ's shaders failed to compile - the organ stays off" );
+		FFGLLog::LogToHost( "Filament: the organ's shaders failed to compile" );
+		releaseOrgan();
+		organFailed = true;
+		return false;
+	}
+
+	//The gel table: a row of the Planck grid per gel, read with texelFetch.
+	glGenTextures( 1, &gelTexture );
+	glBindTexture( GL_TEXTURE_2D, gelTexture );
+	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA32F, gels::kRowCount, gels::kGelCount, 0, GL_RGBA, GL_FLOAT, gels::kTable );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+
+	//The control integral: a row per half-cycle, refilled every frame.
+	const std::vector< float > zeros( static_cast< size_t >( organ::kRowPoints ) * organ::kMaxRows * 4, 0.0f );
+	glGenTextures( 1, &controlTexture );
+	glBindTexture( GL_TEXTURE_2D, controlTexture );
+	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA32F, organ::kRowPoints, organ::kMaxRows, 0, GL_RGBA, GL_FLOAT, zeros.data() );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+	glBindTexture( GL_TEXTURE_2D, 0 );
+
+	organReady = true;
+	rampFresh  = true;
+	diag::info( "organ initialised" );
+	return true;
+}
+
+void Filament::releaseOrgan()
+{
+	organShader.FreeGLResources();
+	lampShader.FreeGLResources();
+	for( PassBuffer& b : ramp )
+		b.Destroy();
+	if( gelTexture != 0 )
+		glDeleteTextures( 1, &gelTexture );
+	if( controlTexture != 0 )
+		glDeleteTextures( 1, &controlTexture );
+	gelTexture = controlTexture = 0;
+	organReady  = false;
+	rampCurrent = 0;
+	rampFresh   = true;
+}
+
+void Filament::publishOrganMenu( bool raise )
+{
+	const auto& slots = organ->Slots();
+	for( int i = 0; i < organ::kInputSlots && i < static_cast< int >( slots.size() ); ++i )
+		SetParamElementInfo( PT_AUDIO_INPUT, static_cast< unsigned int >( i ), slots[ static_cast< size_t >( i ) ].label.c_str(),
+		                     slots[ static_cast< size_t >( i ) ].value );
+	organMenuShown = organ->ListCount();
+	if( raise )
+		RaiseParamEvent( PT_AUDIO_INPUT, FF_EVENT_FLAG_ELEMENTS );
+}
+
+void Filament::drawStatusLamp( const GLint viewport[ 4 ], double now )
+{
+	float colour[ 3 ] = { 1.0f, 0.62f, 0.05f };//amber: nothing to listen to
+	switch( organ->LampState() )
+	{
+	case organ::Lamp::Green:
+		colour[ 0 ] = 0.15f, colour[ 1 ] = 1.0f, colour[ 2 ] = 0.25f;
+		break;
+	case organ::Lamp::Red:
+		colour[ 0 ] = 1.0f, colour[ 1 ] = 0.05f, colour[ 2 ] = 0.02f;
+		break;
+	case organ::Lamp::RedBlink:
+		colour[ 0 ] = now - std::floor( now ) < 0.5 ? 1.0f : 0.15f, colour[ 1 ] = 0.03f, colour[ 2 ] = 0.02f;
+		break;
+	case organ::Lamp::Idle: break;
+	}
+	//Top right, a little in from the corner.
+	const float radius  = std::max( 3.0f, 0.014f * static_cast< float >( viewport[ 3 ] ) );
+	const float cx      = static_cast< float >( viewport[ 0 ] + viewport[ 2 ] ) - 2.2f * radius;
+	const float cy      = static_cast< float >( viewport[ 1 ] + viewport[ 3 ] ) - 2.2f * radius;
+	const GLint reach   = static_cast< GLint >( std::ceil( radius ) ) + 3;
+	const GLboolean scissorWas = glIsEnabled( GL_SCISSOR_TEST );
+	const GLboolean blendWas   = glIsEnabled( GL_BLEND );
+	GLint box[ 4 ] = { 0, 0, 0, 0 };
+	glGetIntegerv( GL_SCISSOR_BOX, box );
+	glEnable( GL_SCISSOR_TEST );
+	glScissor( static_cast< GLint >( cx ) - reach, static_cast< GLint >( cy ) - reach, 2 * reach, 2 * reach );
+	glEnable( GL_BLEND );
+	glBlendFuncSeparate( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE );
+	{
+		ScopedShaderBinding shader( lampShader.GetGLID() );
+		lampShader.Set( "LampColour", colour[ 0 ], colour[ 1 ], colour[ 2 ] );
+		lampShader.Set( "LampCentre", cx, cy );
+		lampShader.Set( "LampRadius", radius );
+		quad.Draw();
+	}
+	glBlendFunc( GL_ONE, GL_ZERO );
+	if( !blendWas )
+		glDisable( GL_BLEND );
+	glScissor( box[ 0 ], box[ 1 ], box[ 2 ], box[ 3 ] );
+	if( !scissorWas )
+		glDisable( GL_SCISSOR_TEST );
 }
 
 //---------------------------------------------------------------------------
@@ -570,6 +885,7 @@ FFResult Filament::DeInitGL()
 	light.Destroy();
 	bloomX.Destroy();
 	bloomY.Destroy();
+	releaseOrgan();
 	if( planckTexture != 0 )
 	{
 		glDeleteTextures( 1, &planckTexture );
@@ -587,8 +903,22 @@ FFResult Filament::SetFloatParameter( unsigned int index, float value )
 
 	// An About button is a press, not a value to keep: it opens a browser and
 	// nothing about the effect changes.
-	if( index >= PT_ABOUT_FIRST )
+	if( index >= PT_ABOUT_FIRST && index < PT_ABOUT_END )
 		return stoatworks::about::handleParam( index - PT_ABOUT_FIRST, value ) ? FF_SUCCESS : FF_FAIL;
+
+	if( index == PT_RESCAN )
+	{
+		// On the press, once. Only while the organ is on: listing devices
+		// starts CoreAudio, and organ off never does.
+		const bool down = value >= 0.5f;
+		if( down && !rescanHeld && organ->Rescan() )
+			publishOrganMenu( true );
+		rescanHeld      = down;
+		params[ index ] = value;
+		return FF_SUCCESS;
+	}
+	if( index == PT_AUDIO_INPUT )
+		organ->Want( value );// stored; acted on only while the organ is on
 
 	params[ index ] = value;
 	return FF_SUCCESS;
@@ -661,5 +991,7 @@ size_t Filament::StateBytesForTest() const
 	count( light, 16 );
 	count( bloomX, 8 );
 	count( bloomY, 8 );
+	count( ramp[ 0 ], 16 );
+	count( ramp[ 1 ], 16 );
 	return bytes;
 }
