@@ -572,6 +572,8 @@ void main()
 	int row     = 0;
 	vec3 fire   = b > 0.0 ? firing( 0, begin + ( 0.5 - carried ) / share ) : vec3( 2.0 );
 
+	ivec3 gel = ( Perturb & 4096 ) != 0 ? GelIndex.gbr : GelIndex;//the negative control: the gels rotated a channel
+
 	vec3 T     = state.rgb;
 	vec3 light = vec3( 0.0 );
 	for( int k = 0; k < Substeps; ++k )
@@ -608,10 +610,10 @@ void main()
 			float k4 = derivative( t + StepSeconds * k3, v2[ c ] );
 			T[ c ]   = clamp( t + StepSeconds / 6.0 * ( k1 + 2.0 * k2 + 2.0 * k3 + k4 ), 100.0, 3695.0 );
 		}
-		light += gelEmission( T.r, GelIndex.r ) + gelEmission( T.g, GelIndex.g ) + gelEmission( T.b, GelIndex.b );
+		light += gelEmission( T.r, gel.r ) + gelEmission( T.g, gel.g ) + gelEmission( T.b, gel.b );
 	}
 	if( Substeps == 0 )
-		light = gelEmission( T.r, GelIndex.r ) + gelEmission( T.g, GelIndex.g ) + gelEmission( T.b, GelIndex.b );
+		light = gelEmission( T.r, gel.r ) + gelEmission( T.g, gel.g ) + gelEmission( T.b, gel.b );
 	else
 		light /= float( Substeps );
 

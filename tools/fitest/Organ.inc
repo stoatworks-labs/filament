@@ -1176,6 +1176,121 @@ int runOrganResize( int W, int H, int perturb, bool quiet = false )
 }
 
 //---------------------------------------------------------------------------
+// --organcolour: each filament's light is its own gel's, at its own T.
+//---------------------------------------------------------------------------
+/// What the organ's light at one bulb must be, in double from the committed
+/// tables: for each channel, gel row g at T interpolated on the Planck grid,
+/// times 2^log2Y( T ). `bound` gets the float error of the GPU's sum (below).
+void gelLight( const double T[ 3 ], const int gel[ 3 ], double out[ 3 ], double bound[ 3 ] )
+{
+	constexpr double eps = 1.0 / 8388608.0;//2^-23, a float's unit roundoff x 2
+	for( int i = 0; i < 3; ++i )
+		out[ i ] = bound[ i ] = 0.0;
+	for( int c = 0; c < 3; ++c )
+	{
+		const double x  = std::clamp( ( T[ c ] - planck::kFirstKelvin ) / planck::kStepKelvin, 0.0, planck::kCount - 1 - 0.0001 );
+		const int k     = static_cast< int >( std::floor( x ) );
+		const double t  = x - k;
+		const float* ga = filament::gels::kTable[ gel[ c ] ][ k ];
+		const float* gb = filament::gels::kTable[ gel[ c ] ][ k + 1 ];
+		const double la = planck::kTable[ k ][ 3 ], lb = planck::kTable[ k + 1 ][ 3 ];
+		const double ex = la + ( lb - la ) * t;
+		const double L  = std::exp2( ex );
+		//The GPU's float arithmetic, op by op: x = ( T - first ) / step (two
+		//roundings), the two lerps (three each), exp2 to GLSL 4.10's stated
+		//precision (s4.7.1: 3 + 2|x| ULP), the product and the three-way sum.
+		const double dx = 2.0 * eps * x;
+		for( int i = 0; i < 3; ++i )
+		{
+			const double rgb   = ga[ i ] + ( gb[ i ] - ga[ i ] ) * t;
+			const double slope = std::fabs( gb[ i ] - ga[ i ] ) + std::fabs( rgb ) * std::log( 2.0 ) * std::fabs( lb - la );
+			out[ i ] += rgb * L;
+			bound[ i ] += L * ( slope * dx + 3.0 * eps * ( std::fabs( ga[ i ] ) + std::fabs( gb[ i ] ) )
+			                    + std::fabs( rgb ) * ( std::log( 2.0 ) * 3.0 * eps * ( std::fabs( la ) + std::fabs( lb ) ) + ( 3.0 + 2.0 * std::fabs( ex ) ) * eps + 2.0 * eps ) );
+		}
+	}
+	for( int i = 0; i < 3; ++i )
+		bound[ i ] += 2.0 * eps * std::fabs( out[ i ] );
+}
+
+int runOrganColour( int W, int H, int perturb, bool quiet = false )
+{
+	//The synthetic track on a flat wall at the music level, three runs with
+	//the nine gels three to a run, so every row of the table is read and
+	//each through a different channel. At four frames a frame of zero length
+	//follows (the same clock again): no substeps, so the light written is
+	//the light at the temperatures stored, read through the shutter probe.
+	const int assignments[ 3 ][ 3 ] = { { 0, 1, 2 }, { 3, 4, 5 }, { 6, 7, 8 } };
+	const long marks[]              = { 15, 30, 45, 60 };
+	if( !quiet )
+		std::printf( "organ colour: the synthetic track; each filament's light against the gel table at its own T, all nine gels, %dx%d\n", W, H );
+	int failures = 0;
+	double worstRatio = 0.0, worstOff = 0.0, worstBound = 0.0, spread = 0.0;
+	int samples = 0;
+	bool ran = true;
+	for( const auto& gel : assignments )
+	{
+		Session s;
+		Knobs k;
+		k.columns = 16;
+		k.rows    = 9;
+		OrganKnobs o = organDefaults();
+		for( int c = 0; c < 3; ++c )
+			o.gel[ c ] = gel[ c ];
+		applyOrgan( s.plugin, k, o );
+		s.plugin.SetPerturbForTest( perturb );
+		s.plugin.SetProbeForTest( model::kProbeState );
+		if( !s.begin( W, H ) )
+		{
+			ran = false;
+			break;
+		}
+		s.upload( flat( W, H, kMusicLevel ) );
+		int x, y;
+		s.cellPixel( 5, 4, k.columns, k.rows, x, y );
+		Audio audio;
+		size_t mark = 0;
+		for( long f = 0; f <= marks[ 3 ] && ran; ++f )
+		{
+			ran = organFrame( s, &audio, f );
+			if( !ran || mark >= 4 || f != marks[ mark ] )
+				continue;
+			++mark;
+			float state[ 4 ], light[ 4 ];
+			s.readPixel( x, y, state );
+			s.plugin.SetProbeForTest( model::kProbeShutter );
+			ran = s.renderAt( f );//dt = 0
+			s.readPixel( x, y, light );
+			s.plugin.SetProbeForTest( model::kProbeState );
+			const double T[ 3 ] = { state[ 0 ], state[ 1 ], state[ 2 ] };
+			double want[ 3 ], bound[ 3 ];
+			gelLight( T, gel, want, bound );
+			spread = std::max( spread, std::max( { T[ 0 ], T[ 1 ], T[ 2 ] } ) - std::min( { T[ 0 ], T[ 1 ], T[ 2 ] } ) );
+			for( int i = 0; i < 3; ++i )
+			{
+				const double off = std::fabs( light[ i ] - want[ i ] );
+				if( off / bound[ i ] > worstRatio )
+				{
+					worstRatio = off / bound[ i ];
+					worstOff   = off / std::max( std::fabs( want[ i ] ), 1e-30 );
+					worstBound = bound[ i ] / std::max( std::fabs( want[ i ] ), 1e-30 );
+				}
+			}
+			++samples;
+		}
+		s.end();
+	}
+	if( !ran )
+		return 1;
+	failures += report( worstRatio <= 1.0, quiet, "at %d moments, every channel of the light is the gel table's for each filament's own T and gel: worst %.2e relative against a float bound of %.2e (%.2f of it)", samples, worstOff,
+	                    worstBound, worstRatio );
+	//Without different temperatures a gel swapped between channels would
+	//sum to the same light and the check could not see it.
+	failures += report( spread > 100.0, quiet, "and the three filaments were apart: up to %.0f K between them", spread );
+	return failures;
+}
+
+//---------------------------------------------------------------------------
 // --coreaudio: organ off never reaches earshot, nor CoreAudio.
 //---------------------------------------------------------------------------
 /// Images loaded in this process whose path names audio. The frameworks

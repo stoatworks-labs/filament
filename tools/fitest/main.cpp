@@ -42,6 +42,7 @@
 #include "Filament.h"
 #include "Lamp.h"
 #include "Model.h"
+#include "GelTable.h"
 #include "PlanckTable.h"
 #include "Shaders.h"
 
@@ -1384,6 +1385,7 @@ int runNegative( int W, int H )
 		{ organ::kPerturbFrameSlope, "organ: control from the frame's audio", runOrganFrames, "--organframes" },
 		{ organ::kPerturbFloatClock, "organ: half-cycle grid on a float clock", runOrganClock, "--organclock" },
 		{ lamp::kPerturbResizeClears, "organ: a resize or regrid restarts it cold", runOrganResize, "--organresize" },
+		{ organ::kPerturbGelRotated, "organ: each filament behind the next gel", runOrganColour, "--organcolour" },
 		{ kNegMenuByIndex, "organ: device menu valued by index", runOrganDevices, "--organdevices" },
 		//Last: its plant really lists the devices, which loads CoreAudio.
 		{ kNegListAtConstruction, "organ: devices listed with the organ off", runCoreAudio, "--coreaudio" },
@@ -1701,6 +1703,7 @@ void usage()
 		"  --organframes       organ: the music at 30, 60 and 144 fps agrees\n"
 		"  --organclock        organ: the music with the host clock 5.8 days in\n"
 		"  --organresize       organ: a resize and a grid change mid-music\n"
+		"  --organcolour       organ: each filament's light is its gel's at its own T\n"
 		"  --organdevices      organ: the device menu, states and lamp (scripted backend)\n"
 		"  --coreaudio         organ off never reaches earshot or CoreAudio (REAL backend; run alone)\n"
 		"  --negative          every check above can fail\n"
@@ -1755,7 +1758,7 @@ int main( int argc, char** argv )
 	std::vector< std::string > checks;
 
 	const std::set< std::string > rendered = { "--steady",      "--colour",      "--rise",         "--fall",      "--ripple",       "--resize",
-		                                       "--firing",      "--organstep",   "--organframes",  "--organclock", "--organresize",  "--organdevices",
+		                                       "--firing",      "--organstep",   "--organframes",  "--organclock", "--organresize",  "--organcolour", "--organdevices",
 		                                       "--coreaudio",   "--negative" };
 	const std::set< std::string > offline  = { "--names", "--crossover" };
 
@@ -1922,6 +1925,8 @@ int main( int argc, char** argv )
 						runOrganClock( width, height, perturb );
 					else if( check == "--organresize" )
 						runOrganResize( width, height, perturb );
+					else if( check == "--organcolour" )
+						runOrganColour( width, height, perturb );
 					else if( check == "--organdevices" )
 						runOrganDevices( width, height, perturb );
 					else if( check == "--coreaudio" )

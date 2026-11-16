@@ -130,6 +130,7 @@ enum Perturb : int
 	kPerturbFrameSlope  = 512, ///< the control's slope from the frame's audio, not the last 1/16's: --organframes must fail
 	kPerturbFloatClock  = 1024,///< the half-cycle grid from a float clock: --organclock must fail
 	kPerturbNoReset     = 2048,///< the ramp never reset at the zero crossing: --firing and --organstep must fail
+	kPerturbGelRotated  = 4096,///< each filament lit through the next channel's gel: --organcolour must fail
 };
 
 struct Settings
