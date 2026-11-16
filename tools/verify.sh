@@ -10,10 +10,14 @@
 #   build         a FRESH universal Release build. Not the dev build: CMake
 #                 latches the architecture list at the first target, so the
 #                 only build worth measuring is one configured from nothing.
+#   warnings      the fresh build's compiler warnings, ours apart from the
+#                 vendored code's: the FFGL SDK and the earshot snapshot are
+#                 never patched, so theirs are counted and not failed.
 #   table         the committed Planck table recomputes from the CIE 1931
 #                 colour-matching functions, byte for byte. The plugin
 #                 compiles PlanckTable.h; tools/planck_table.py writes it from
-#                 tools/data/ciexyz31_1.csv, whose SHA-256 it checks.
+#                 tools/data/ciexyz31_1.csv, whose SHA-256 it checks. The gel
+#                 table the same way, from LEE's spectra (tools/gel_table.py).
 #   shaders       does every shader compile, through a real GLSL compiler,
 #                 before a host has to find out. The shaders are assembled at
 #                 run time from one filament library, so the text compiled here
@@ -41,15 +45,35 @@
 #                               small lamp than a big one
 #                   --resize    an output resize and a grid change mid-fade
 #                               keep every temperature
+#                 and the colour organ's:
+#                   --firing      a steady control's lamp RMS follows the
+#                                 phase-control closed form
+#                   --organstep   a step of control from cold follows the
+#                                 lamp's ODE through the cut sine
+#                   --organframes the music at 30, 60 and 144 fps agrees
+#                   --organclock  the music with the host clock 5.8 days in
+#                   --organresize a resize and a regrid mid-music
+#                   --organcolour each filament's light is its own gel's
+#                   --organdevices the device menu, states and lamp, on a
+#                                 scripted backend
 #                   --negative  every one of those FAILS on a perturbed model
 #                 and again on Apple's SOFTWARE renderer (CI's), which is not
 #                 bit-repeatable.
+#   organ (no GL) --crossover (each band's -6.02 dB point at its corner) and
+#                 --detector (ETI 428's release, the gains in dB of voltage).
+#   coreaudio     with the organ off, nothing reaches earshot or CoreAudio:
+#                 the REAL backend, in a process of its own.
+#   organ off     with the organ off the plugin is the one before it: this
+#                 build against a build of $ORGAN_OFF_REF, the same frames,
+#                 the same pipe bytes, the same first 19 parameters.
 #   pipe          the fleet's frame contract, plus what a closed stdout (exit
 #                 1, not SIGPIPE's 141), an unknown cue, a stepped option, a
-#                 stepped boolean and a ramped slider do.
+#                 stepped boolean and a ramped slider do; the first and the
+#                 third again with the organ on.
 #   sweep         does every control change the picture. A GLSL uniform whose
 #                 name does not match the C++ is ignored without a word.
-#   bench         the render cost and the state held, for the record.
+#   bench         the render cost and the state held, organ off and on,
+#                 for the record.
 #   registration  does the bundle contain a plugin at all -- a file-scope
 #                 CFFGLPluginInfo nothing names, which a linker may drop while
 #                 still producing a bundle that loads and exports plugMain.
@@ -87,8 +111,9 @@ fail() { printf '   \033[31mFAIL\033[0m %s\n' "$1"; failures=$(( failures + 1 ))
 
 step "build (fresh universal Release, $BUILD)"
 rm -rf "$BUILD"
-if cmake -B "$BUILD" -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1 \
-   && cmake --build "$BUILD" --parallel >/dev/null 2>&1; then
+buildlog=$( mktemp )
+if cmake -B "$BUILD" -DCMAKE_BUILD_TYPE=Release >"$buildlog" 2>&1 \
+   && cmake --build "$BUILD" --parallel >>"$buildlog" 2>&1; then
 	pass "builds"
 else
 	fail "build failed -- run: cmake -B $BUILD -DCMAKE_BUILD_TYPE=Release && cmake --build $BUILD"
@@ -97,8 +122,28 @@ fi
 
 FITEST="$BUILD/fitest"
 
+# The FFGL SDK (a submodule) and the earshot snapshot (external/earshot/
+# SNAPSHOT) are never patched, so a warning in either is counted, not failed.
+# Anything else is ours.
+step "warnings"
+ours=$( grep -E 'warning:' "$buildlog" | grep -v '/external/' | sort -u || true )
+ffglw=$( grep -E 'warning:' "$buildlog" | grep '/external/ffgl/' | sort -u | grep -c . || true )
+earw=$( grep -E 'warning:' "$buildlog" | grep '/external/earshot/' | sort -u | grep -c . || true )
+if [ -z "$ours" ]; then
+	pass "no compiler warning in our code (vendored, not ours to fix: $ffglw in the FFGL SDK, $earw in the earshot snapshot)"
+else
+	fail "compiler warnings in our code:"
+	printf '%s\n' "$ours" | head -20 | sed 's/^/      /'
+fi
+rm -f "$buildlog"
+
 step "table"
 if out=$(python3 tools/planck_table.py --check 2>&1); then
+	pass "$out"
+else
+	fail "$out"
+fi
+if out=$(python3 tools/gel_table.py --check 2>&1); then
 	pass "$out"
 else
 	fail "$out"
@@ -174,9 +219,10 @@ else
 	printf '   skipped: no demo/\n'
 fi
 
+PHYSICS="steady colour rise fall ripple resize firing organstep organframes organclock organresize organcolour organdevices negative"
 for size in 320x180 1280x720; do
 	step "physics at $size"
-	for check in steady colour rise fall ripple resize negative; do
+	for check in $PHYSICS; do
 		if out=$("$FITEST" --$check --size $size 2>&1); then
 			pass "fitest --$check: $( printf '%s\n' "$out" | grep -v '^$' | tail -1 )"
 		else
@@ -191,7 +237,7 @@ done
 # resize check failed CI by one ulp), so a check that asserts exactness on this
 # Mac's GPU is found here before CI finds it.
 step "physics at 320x180 on the software renderer (CI's)"
-for check in steady colour rise fall ripple resize negative; do
+for check in $PHYSICS; do
 	if out=$(FITEST_RENDERER=software "$FITEST" --$check --size 320x180 2>&1); then
 		pass "fitest --$check (software): $( printf '%s\n' "$out" | grep -v '^$' | tail -1 )"
 	else
@@ -207,6 +253,126 @@ else
 	fail "fitest --names"
 	printf '%s\n' "$out" | sed 's/^/      /'
 fi
+
+step "organ (no GL)"
+for check in crossover detector; do
+	if out=$("$FITEST" --$check 2>&1); then
+		pass "fitest --$check: $( printf '%s\n' "$out" | grep -v '^$' | tail -1 )"
+	else
+		fail "fitest --$check"
+		printf '%s\n' "$out" | sed 's/^/      /'
+	fi
+done
+
+# Alone in its process: its claim is that nothing in the process has loaded
+# CoreAudio, and every other organ check runs earshot (on a scripted backend).
+step "coreaudio (organ off, the real backend, its own process)"
+if out=$("$FITEST" --coreaudio --size 320x180 2>&1); then
+	printf '%s\n' "$out" | grep -E '^   ok' | sed 's/^   ok   /   ok   /'
+	pass "fitest --coreaudio: $( printf '%s\n' "$out" | grep -v '^$' | tail -1 )"
+else
+	fail "fitest --coreaudio"
+	printf '%s\n' "$out" | sed 's/^/      /'
+fi
+
+#---------------------------------------------------------------------------
+# Organ off is the plugin before the organ. A build of ORGAN_OFF_REF (the
+# commit the organ branched from) renders the same cards, pipes the same
+# bytes and declares the same first 19 parameters as this build with the
+# organ off -- and with every organ control moved while it is off. Same
+# Mac, same GPU, same compiler: expected bit-exact, and compared bit-exact.
+#---------------------------------------------------------------------------
+ORGAN_OFF_REF="${ORGAN_OFF_REF:-91bef09}"
+step "organ off against $ORGAN_OFF_REF"
+ref=$( mktemp -d )
+# git archive leaves the FFGL submodule an empty folder: the SDK is linked in.
+if git archive "$ORGAN_OFF_REF" 2>/dev/null | tar -x -C "$ref" 2>/dev/null \
+   && { rmdir "$ref/external/ffgl" 2>/dev/null || true; } \
+   && ln -s "$PWD/external/ffgl" "$ref/external/ffgl" \
+   && cmake -S "$ref" -B "$ref/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 >/dev/null 2>&1 \
+   && cmake --build "$ref/build" --target fitest --parallel >/dev/null 2>&1; then
+	REF="$ref/build/fitest"
+	same_png() {  # same_png A.png B.png: identical RGBA
+		python3 - "$1" "$2" <<'PY'
+import sys
+sys.path.insert(0, "tools")
+import sweep
+a, b = (open(p, "rb").read() for p in sys.argv[1:3])
+sys.exit(0 if sweep.pixels(a) == sweep.pixels(b) else 1)
+PY
+	}
+	moved=( --set "Crossover Low=0" --set "Crossover High=1" --set "Bass Gain=1" --set "Mid Gain=0" --set "Treble Gain=0.3"
+	        --set "Bass Gel=5" --set "Mid Gel=8" --set "Treble Gel=3" --set "Audio Input=1" --set "Status Lamp=0" )
+	n=0; bad=0
+	for case in "320x180|" "1280x720|" "320x180|Gels=1,Glass=2,Wattage=1" "320x180|Pixel Mode=1,Mains=1,Dimmer=2" \
+	            "640x360|Columns=160,Rows=90,Gap=0,Glow=1,Bloom=1,Exposure=1" "96x54|Columns=4,Rows=2,Ambient Temp=1,Mix=0.5,Glass=1"; do
+		size=${case%%|*}; sets=${case#*|}
+		args=()
+		IFS=',' read -r -a pairs <<<"$sets"
+		for pair in "${pairs[@]}"; do [ -n "$pair" ] && args+=( --set "$pair" ); done
+		"$REF" --out "$ref/a.png" --size "$size" --frames 40 "${args[@]}" >/dev/null 2>&1
+		FILAMENT_NO_DEVICES=1 "$FITEST" --out "$ref/b.png" --size "$size" --frames 40 "${args[@]}" >/dev/null 2>&1
+		FILAMENT_NO_DEVICES=1 "$FITEST" --out "$ref/c.png" --size "$size" --frames 40 "${args[@]}" "${moved[@]}" >/dev/null 2>&1
+		for got in b c; do
+			n=$(( n + 1 ))
+			if ! same_png "$ref/a.png" "$ref/$got.png"; then
+				bad=$(( bad + 1 ))
+				printf '      differs: %s %s%s\n' "$size" "${sets:-defaults}" "$( [ $got = c ] && printf ', organ controls moved' )"
+			fi
+		done
+	done
+	# And on the software renderer (CI's), defaults at CI's raster.
+	FITEST_RENDERER=software "$REF" --out "$ref/a.png" --size 320x180 --frames 40 >/dev/null 2>&1
+	FITEST_RENDERER=software FILAMENT_NO_DEVICES=1 "$FITEST" --out "$ref/b.png" --size 320x180 --frames 40 "${moved[@]}" >/dev/null 2>&1
+	n=$(( n + 1 ))
+	if ! same_png "$ref/a.png" "$ref/b.png"; then
+		bad=$(( bad + 1 ))
+		printf '      differs: 320x180 defaults on the software renderer, organ controls moved\n'
+	fi
+	if [ "$bad" -eq 0 ]; then
+		pass "$n renders (6 settings at 4 rasters, organ controls moved and not, and one on the software renderer): every pixel the same as $ORGAN_OFF_REF's"
+	else
+		fail "$bad of $n organ-off renders differ from $ORGAN_OFF_REF's"
+	fi
+	# The comparison's negative control: the same render with the organ on
+	# must differ, or the comparison is not looking at the picture.
+	"$REF" --out "$ref/a.png" --size 320x180 --frames 40 >/dev/null 2>&1
+	FILAMENT_NO_DEVICES=1 "$FITEST" --out "$ref/b.png" --size 320x180 --frames 40 --set Organ=1 >/dev/null 2>&1
+	if same_png "$ref/a.png" "$ref/b.png"; then
+		fail "the comparison's negative control: the organ on rendered the same as $ORGAN_OFF_REF -- the comparison sees nothing"
+	else
+		pass "its negative control: the same render with the organ on differs"
+	fi
+	# A moving source through --pipe: 30 frames, byte for byte.
+	python3 -c "
+import sys
+W, H = 64, 36
+out = bytearray()
+for f in range(30):
+    for y in range(H):
+        for x in range(W):
+            out += bytes(((x * 4 + f * 7) % 256, (y * 7 + f * 3) % 256, ((x + y) * 3 + f * 11) % 256, 255))
+sys.stdout.buffer.write(out)" > "$ref/in.raw"
+	"$REF" --pipe --size 64x36 < "$ref/in.raw" > "$ref/a.raw" 2>/dev/null
+	FILAMENT_NO_DEVICES=1 "$FITEST" --pipe --size 64x36 < "$ref/in.raw" > "$ref/b.raw" 2>/dev/null
+	if [ -s "$ref/a.raw" ] && cmp -s "$ref/a.raw" "$ref/b.raw"; then
+		pass "--pipe, 30 moving frames at 64x36: the same $( wc -c < "$ref/b.raw" | tr -d ' ' ) bytes"
+	else
+		fail "--pipe output differs from $ORGAN_OFF_REF's"
+	fi
+	# The v0.1.0 composition's parameters: the same 19, in the same places.
+	"$REF" --list 2>/dev/null | head -20 > "$ref/a.list"
+	FILAMENT_NO_DEVICES=1 "$FITEST" --list 2>/dev/null | head -20 > "$ref/b.list"
+	if [ "$( wc -l < "$ref/a.list" )" -eq 20 ] && cmp -s "$ref/a.list" "$ref/b.list"; then
+		pass "--list: parameters 0-18 identical (index, name, kind, default, range); the organ's are appended"
+	else
+		fail "the first 19 parameters differ from $ORGAN_OFF_REF's"
+		diff "$ref/a.list" "$ref/b.list" | sed 's/^/      /'
+	fi
+else
+	fail "could not build $ORGAN_OFF_REF for the comparison"
+fi
+rm -rf "$ref"
 
 #---------------------------------------------------------------------------
 # --pipe, in the fleet's frame format. Two and a half frames in must be exactly
@@ -225,6 +391,13 @@ if [ "$status" -eq 0 ] && [ "$got" = "$(( frame * 2 ))" ]; then
 	pass "2.5 frames in, exactly 2 frames out, clean exit"
 else
 	fail "2.5 frames in gave $got bytes out (want $(( frame * 2 ))), exit $status"
+fi
+got=$( "$FITEST" --pipe --size ${W}x${H} --set Organ=1 < "$raw" 2>/dev/null | wc -c | tr -d ' ' )
+status=${PIPESTATUS[0]}
+if [ "$status" -eq 0 ] && [ "$got" = "$(( frame * 2 ))" ]; then
+	pass "organ on: 2.5 frames in, exactly 2 frames out, clean exit"
+else
+	fail "organ on: 2.5 frames in gave $got bytes out (want $(( frame * 2 ))), exit $status"
 fi
 # Read from a file, not a pipe: a writer killed by SIGPIPE would fail the
 # pipeline whatever fitest did, and the refusal would pass for the wrong reason.
@@ -245,6 +418,13 @@ if [ "$status" -eq 1 ]; then
 	pass "a closed stdout ends the run with exit 1, not SIGPIPE"
 else
 	fail "a closed stdout gave exit $status, not 1"
+fi
+"$FITEST" --pipe --size ${W}x${H} --set Organ=1 < "$raw" 2>/dev/null | head -c 1 >/dev/null
+status=${PIPESTATUS[0]}
+if [ "$status" -eq 1 ]; then
+	pass "organ on: a closed stdout ends the run with exit 1, not SIGPIPE"
+else
+	fail "organ on: a closed stdout gave exit $status, not 1"
 fi
 # A failed render ends the run with exit 1 too.
 "$FITEST" --pipe --size ${W}x${H} --fail-render-at 3 < "$raw" >/dev/null 2>&1
@@ -309,7 +489,10 @@ else
 fi
 
 step "bench (for the record)"
+printf '   organ off:\n'
 "$FITEST" --bench --frames 60 2>&1 | sed -n '3,6p' | sed 's/^/   /'
+printf '   organ on (the synthetic track through feed()):\n'
+"$FITEST" --bench --frames 60 --set Organ=1 2>&1 | sed -n '3,6p' | sed 's/^/   /'
 
 BUNDLE="$BUILD/Filament.bundle"
 BIN="$BUNDLE/Contents/MacOS/Filament"
@@ -357,6 +540,9 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$BUNDLE" ]; then
 	step "oxbow"
 	OXBOW="${OXBOW:-$OXBOW_REPO/build/oxbow}"
 	if [ -x "$OXBOW" ]; then
+		# A host sweeping the controls could switch the organ on: no device
+		# list, no device opened, whatever it does.
+		export FILAMENT_NO_DEVICES=1
 		probe=$("$OXBOW" probe "$BUNDLE" 2>&1)
 		for want in "name:        SW Filament" "id:          FI01" "type:        effect"; do
 			case "$probe" in

@@ -696,6 +696,11 @@ int runDetector( int, int, int perturb, bool quiet = false )
 	//of its level.
 	const OrganKnobs defaults = organDefaults();
 	const double tones[ 3 ]   = { 100.0, 600.0, 6000.0 };//480, 80 and 8 samples a period
+	//ETI 428's parts list (p.79), held here and not read from Organ.h, so a
+	//changed constant there fails: R19 100k, C12 1.0 uF red, 0.47 uF green
+	//and blue.
+	const double etiR19       = 100.0e3;
+	const double etiC[ 3 ]    = { 1.0e-6, 0.47e-6, 0.47e-6 };
 	const char* names[ 3 ]    = { "bass", "mid", "treble" };
 	if( !quiet )
 		std::printf( "detector: a tone in each band stopped at a zero crossing; the release fitted to the organ's own detector (no GL)\n" );
@@ -760,7 +765,7 @@ int runDetector( int, int, int perturb, bool quiet = false )
 		for( size_t n = from; n < to; ++n )
 			resid = std::max( resid, std::fabs( std::log( node[ n ] ) - ( icept + slope * static_cast< double >( n - from ) / R ) ) );
 		const double tau  = -1.0 / slope;
-		const double want = organ::kDischargeOhms * organ::kDetectorFarads[ c ];
+		const double want = etiR19 * etiC[ c ];
 		//A slope error e over the window's length Tw tilts the line by e Tw / 2
 		//at its ends; the fit's own residual bounds what it can hide. Plus the
 		//double arithmetic of the sums (N x 2^-52 relative).
