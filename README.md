@@ -47,8 +47,8 @@ Resolume. Resolume's bundled demo clip Metalive 01 at the defaults.</sub>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`filament-0.2.0-macos-universal.dmg`](https://github.com/stoatworks-labs/filament/releases/download/v0.2.0/filament-0.2.0-macos-universal.dmg) | 1.0 MB |
-| Universal (Apple Silicon + Intel) · .zip archive | [`filament-macos-universal.zip`](https://github.com/stoatworks-labs/filament/releases/latest/download/filament-macos-universal.zip) | 609 KB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`filament-0.2.0-macos-universal.dmg`](https://github.com/stoatworks-labs/filament/releases/download/v0.2.0/filament-0.2.0-macos-universal.dmg) | 705 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`filament-macos-universal.zip`](https://github.com/stoatworks-labs/filament/releases/latest/download/filament-macos-universal.zip) | 637 KB |
 
 </details>
 
@@ -64,7 +64,7 @@ Resolume. Resolume's bundled demo clip Metalive 01 at the defaults.</sub>
 
 All builds, checksums and release notes: [github.com/stoatworks-labs/filament/releases](https://github.com/stoatworks-labs/filament/releases).
 
-The Windows builds are unsigned, so SmartScreen warns once.
+macOS builds are signed and notarised and open normally. The Windows builds are unsigned, so SmartScreen warns once.
 
 <!-- downloads:end -->
 
@@ -162,11 +162,6 @@ wall paints the whole frame, whatever the clip's alpha.
 (25 September 2026) drew. There's a
 [user guide](https://stoatworks-labs.com/software/filament/guide/)
 ([PDF](docs/USER-GUIDE.pdf)) and a [project page](https://stoatworks-labs.com/software/filament/).
-
-**The v0.2.0 macOS downloads aren't signed yet.** They're Developer ID-signed and notarised on
-my Mac after publication, and that was held up when the release went out, so for now the
-release carries CI's unsigned build and macOS may refuse it. Signed ones will replace them
-under the same names.
 
 ### Measured offline, on macOS
 
