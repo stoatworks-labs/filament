@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(Filament
-    VERSION 0.1.0
+    VERSION 0.2.0
     LANGUAGES CXX
 )
 
@@ -55,7 +55,7 @@ set(FFGL_BUILD_EXAMPLE_PLUGINS OFF CACHE BOOL "" FORCE)
 add_subdirectory(external/ffgl EXCLUDE_FROM_ALL)
 
 # ---------------------------------------------------------------------------
-# earshot, the colour organ's audio: a snapshot of ~/dev/earshot, unpatched
+# earshot, the colour organ's audio: a snapshot of github.com/stoatworks-labs/earshot, unpatched
 # (external/earshot/SNAPSHOT). Only source/Organ.cpp includes it, and nothing
 # in it runs until the organ is first on.
 # ---------------------------------------------------------------------------

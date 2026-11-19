@@ -28,7 +28,7 @@ static CFFGLPluginInfo PluginInfo(
 	2,                                                           // API major version number
 	1,                                                           // API minor version number
 	0,                                                           // Plugin major version number
-	1,                                                           // Plugin minor version number
+	2,                                                           // Plugin minor version number
 	FF_EFFECT,                                                   // Plugin type
 	"The picture on a wall of incandescent bulbs.\n\nEach bulb is a tungsten filament whose dimmer is set by its cell of the clip, and whose temperature follows the filament's own heat balance: power in through a resistance that rises fifteenfold from cold, out by radiation as T^4 and by conduction. Dim a bulb and it goes red as well as dark; a flash rises fast and falls slowly; a cold bulb surges; a small filament flickers at twice the mains. The light is Planck's law at the filament's temperature through the CIE observer.",// Plugin description
 	"Filament FFGL effect"                                       // About
