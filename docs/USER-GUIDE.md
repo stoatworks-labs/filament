@@ -41,7 +41,9 @@ cooler and so redder; the unlit bulbs are faint discs of glass.*
 > gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall
 > moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other
 > controls read 10 to 55). Software rendering says nothing about a GPU or about speed. v0.2.0's
-> Windows DLL has the colour organ compiled in, and the organ has never run on Windows.
+> own Windows DLL passes the same gate (9 passed, 2 skipped): every control as declared, the
+> Organ among those that move the picture, and switching it On with no sound device crashed
+> nothing. Its audio controls were skipped there, so the organ has never heard audio on Windows.
 > Try it on a spare layer before you put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
@@ -237,8 +239,8 @@ the whole frame, whatever the clip's alpha. At 0 it's the clip, with the clip's 
 > **New in v0.2.0.** In Resolume Arena 7.29.0 on macOS the organ's 12 controls register as
 > declared, and On with no input it goes dark with the status lamp amber. It has never
 > listened to a real audio device: every check feeds it recorded or synthetic audio through
-> the audio library's test path. It is compiled into the Windows build, and has never run
-> there. **It can flash**: see [Photosensitivity](#photosensitivity).
+> the audio library's test path. On Windows, in Arena 7.27.1, it has only been switched On
+> with no sound device. **It can flash**: see [Photosensitivity](#photosensitivity).
 
 The **Organ** group, after About, turns the wall into a 1970s three-channel colour organ.
 The music goes through a passive three-way crossover into bass, mid and treble. Each band
@@ -489,7 +491,8 @@ clock and the unit the plugin decided it is in, and on every lamp change the wir
 - **No presets**, no preheat, no lamp-to-lamp variation, and no OpenFX version.
 - **The colour organ** models a 1974 circuit's printed part values, not a measured light
   box. Its input filter, ideal diode and trigger are simplifications, which the spec lists.
-  It has never heard a live device, in Resolume or anywhere, and has never run on Windows.
+  It has never heard a live device, in Resolume or anywhere, and on Windows it has only been
+  switched On with no sound device.
 - **The organ, released as built, with these left open:**
   - It's **dark until you choose an Audio Input**; it doesn't fall back on Resolume's own audio
     analysis, which gives band levels where the crossover and triacs need the waveform.

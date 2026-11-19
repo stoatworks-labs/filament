@@ -841,10 +841,14 @@ renderer:
   scripted backend. A real microphone or loopback through CoreAudio, its 30 ms FIFO
   against a real device clock, and its drop and re-anchor paths are untested. So is the
   microphone permission prompt.
-- **On Windows the organ is compiled in and has never run.** CI's MSVC build compiles
-  earshot with its miniaudio capture and `Organ.cpp` into `Filament.dll` (first
-  in run 43878568458); nothing guards it out. v0.2.0's Arena gate on win-lab covers its
-  controls, not its audio.
+- **On Windows the organ is compiled in and has never heard audio.** CI's MSVC build
+  compiles earshot with its miniaudio capture and `Organ.cpp` into `Filament.dll` (first
+  in run 43878568458); nothing guards it out. v0.2.0's Arena gate (win-lab, Arena 7.27.1,
+  llvmpipe, 2026-11-19, the release zip's own DLL, one run): 9 passed, 0 failed, 2 skipped;
+  32 controls as declared (`plugin-bench/arena/expect/filament.json`, organ rows added);
+  13 move the picture, Organ among them; Wattage, Mains and Ambient Temp inconclusive
+  against a floor of 5.72 (v0.1.0's run: 1.07); the 9 audio rows skipped, Rescan Inputs
+  and Status Lamp inert; Arena alive and its log clean after Organ On with no sound device.
 - **The detector's attack** is not measured by any check, only its release. Nor are the
   rectifier's polarity (the negative swing), the 1/16 slope lag beyond frame-rate
   agreement, or the 10 Hz DC block.

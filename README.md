@@ -39,15 +39,15 @@ Resolume. Resolume's bundled demo clip Metalive 01 at the defaults.</sub>
 
 ## Download
 
-**[v0.1.0](https://github.com/stoatworks-labs/filament/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+**[v0.2.0](https://github.com/stoatworks-labs/filament/releases/tag/v0.2.0)** — prebuilt for macOS and Windows. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`filament-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/filament/releases/download/v0.1.0/filament-0.1.0-macos-universal.dmg) | 235 KB |
-| Universal (Apple Silicon + Intel) · .zip archive | [`filament-macos-universal.zip`](https://github.com/stoatworks-labs/filament/releases/latest/download/filament-macos-universal.zip) | 197 KB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`filament-0.2.0-macos-universal.dmg`](https://github.com/stoatworks-labs/filament/releases/download/v0.2.0/filament-0.2.0-macos-universal.dmg) | 1.0 MB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`filament-macos-universal.zip`](https://github.com/stoatworks-labs/filament/releases/latest/download/filament-macos-universal.zip) | 609 KB |
 
 </details>
 
@@ -56,14 +56,14 @@ Resolume. Resolume's bundled demo clip Metalive 01 at the defaults.</sub>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`filament-0.1.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/filament/releases/download/v0.1.0/filament-0.1.0-windows-x86_64-setup.exe) | 228 KB |
-| x64 · .zip archive | [`filament-windows-x86_64.zip`](https://github.com/stoatworks-labs/filament/releases/latest/download/filament-windows-x86_64.zip) | 122 KB |
+| x64 · .exe installer | [`filament-0.2.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/filament/releases/download/v0.2.0/filament-0.2.0-windows-x86_64-setup.exe) | 396 KB |
+| x64 · .zip archive | [`filament-windows-x86_64.zip`](https://github.com/stoatworks-labs/filament/releases/latest/download/filament-windows-x86_64.zip) | 295 KB |
 
 </details>
 
 All builds, checksums and release notes: [github.com/stoatworks-labs/filament/releases](https://github.com/stoatworks-labs/filament/releases).
 
-macOS builds are signed and notarised and open normally. The Windows builds are unsigned, so SmartScreen warns once.
+The Windows builds are unsigned, so SmartScreen warns once.
 
 <!-- downloads:end -->
 
@@ -162,6 +162,11 @@ wall paints the whole frame, whatever the clip's alpha.
 [user guide](https://stoatworks-labs.com/software/filament/guide/)
 ([PDF](docs/USER-GUIDE.pdf)) and a [project page](https://stoatworks-labs.com/software/filament/).
 
+**The v0.2.0 macOS downloads aren't signed yet.** They're Developer ID-signed and notarised on
+my Mac after publication, and that was held up when the release went out, so for now the
+release carries CI's unsigned build and macOS may refuse it. Signed ones will replace them
+under the same names.
+
 ### Measured offline, on macOS
 
 `tools/verify.sh` passes on this Mac (M4 Max, macOS 26.4) against a fresh universal
@@ -249,10 +254,15 @@ heard live audio in Arena.
 
 v0.1.0: a build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
 
-v0.2.0: the colour organ is compiled into the Windows DLL (CI's MSVC build compiles
-earshot, miniaudio and the organ), and it has never run on Windows. The release's own DLL
-goes through the same gate, with the organ's rows added, after the tag; the result will be
-here.
+v0.2.0: the release's own DLL, from the zip on the release page, passes the same gate in
+the same Arena (9 checks passed, 2 skipped, none failed, one run on 19 November 2026). It
+loads, registers, all 32 controls Arena lists match what the plugin declares, and 13 move
+the picture, the Organ among them: On with no input, the wall goes dark. Wattage, Mains and
+Ambient Temp read inconclusive this time, against a noise floor of 5.7 levels. The organ's
+nine audio controls were skipped, as win-lab has no sound device, and so were Rescan Inputs
+and the Status Lamp. Switching the organ On on a machine with no sound device didn't crash
+Arena or put an error in its log. The colour organ is compiled into the DLL (CI's MSVC
+build compiles earshot, miniaudio and the organ), but it has never heard audio on Windows.
 
 ### What filming the release video found
 
@@ -286,7 +296,7 @@ Released as built, with these left open:
 
 - **The colour organ has never heard a live audio device**, in Resolume or anywhere: every
   check feeds the audio in through earshot's test path. The microphone permission prompt is
-  untested, and the organ has never run on Windows.
+  untested, and on Windows the organ has only been switched On with no sound device.
 - Seen only on Resolume's bundled demo clips, never on camera footage.
 - No OpenFX port, no factory presets.
 
