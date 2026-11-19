@@ -34,6 +34,30 @@ Copyright: Stoatworks Labs
 
 The trap that a reallocated buffer is a cleared buffer, and the check that guards it, are photofinish's.
 
+### earshot — Stoatworks earshot
+
+<https://github.com/stoatworks-labs/earshot>  
+Licence: MIT  
+Copyright: Stoatworks Labs
+
+external/earshot/ is earshot, the fleet's shared audio front end, as a snapshot: one commit taken with git archive and left unmodified, named in external/earshot/SNAPSHOT. It is built into the plugin by add_subdirectory and supplies the capture device, chosen by name with a Silent state, and the audio analysis the plugin reads every frame. It brings miniaudio with it, credited below.
+
+### The colour organ's device menu, status lamp and lazy start — Stoatworks needle and woofer, and spasis before them
+
+<https://github.com/stoatworks-labs/needle>  
+Licence: MIT  
+Copyright: Stoatworks Labs
+
+The Audio Input option, whose values are earshot device keys so a composition remembers the device by name, with None, System default, the spare slots and Rescan Inputs; the status lamp's states (amber no input, green delivering, red silent, blinking red missing); and the rule that no earshot engine is built and no device listed until the first frame drawn with the organ On (source/Organ.{h,cpp}, from needle's VFD input, which is woofer's source/Audio.cpp, spasis's design before it). Adapted.
+
+### The browser demo's WebAssembly build — Stoatworks flyback, woofer and mirrorball
+
+<https://github.com/stoatworks-labs/woofer>  
+Licence: MIT  
+Copyright: Stoatworks Labs
+
+demo/tools/build-wasm.sh, which compiles the colour organ's own C++ and the earshot snapshot to WebAssembly for the browser demo, and demo/wasm/inputs.sha256, which pins what went in, are flyback's (woofer's and mirrorball's before it), cut down to the organ's files. Adapted.
+
 ## Third-party code this project uses
 
 Libraries, SDKs and frameworks the project is built on or bundles.
@@ -68,6 +92,35 @@ Arrives inside the FFGL submodule, under the SDK's CustomThumbnail sample.
 
 Part of the upstream SDK tree rather than something these plugins call directly — listed because it is present in the checkout.
 
+### miniaudio, inside earshot
+
+<https://github.com/mackron/miniaudio>  
+Licence: Public Domain (Unlicense) or MIT-0, at your choice  
+Copyright: David Reid
+
+Arrives inside the vendored earshot snapshot, at external/earshot/third_party/miniaudio/miniaudio.h, unmodified. Not vendored separately.
+
+earshot's capture backend: it lists the capture devices and runs the audio callback, on CoreAudio and WASAPI. The plugin never calls miniaudio itself; it arrives only with earshot.
+
+## Data this project ships
+
+Measurements made by other people and carried inside the product. Each is credited the way its publisher asks, and where a licence requires its attribution to travel with the data, that text is reproduced here.
+
+### CIE 1931 colour-matching functions, 2° observer — CIE, in the copy the Colour & Vision Research Laboratory (UCL) publishes
+
+<https://doi.org/10.25039/CIE.DS.xvudnb9b>  
+Licence: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)  
+Copyright: International Commission on Illumination (CIE)
+
+The colour-matching functions at 1 nm from 360 to 830 nm (CIE 015:2018; CIE 018:2019), as CVRL publishes them, "CIE 1931 2-deg, XYZ CMFs" (http://www.cvrl.org/database/data/cmfs/ciexyz31_1.csv): committed unedited as tools/data/ciexyz31_1.csv (sha256 ccbe601d7abf2227b46007ab29742f1f6bcb8621a6413283fb5ade7626a662c5, checked before use), with a note beside it (tools/data/README.md). The Planck table in source/PlanckTable.h is computed from it by tools/planck_table.py, and so is the colour organ's gel table, source/GelTable.h (tools/gel_table.py); both are compiled into the plugin, and the harness integrates its own locus from the same file. The data and the tables baked from it are CC BY-SA 4.0, not MIT; the code is MIT.
+
+### LEE Filters' spectral transmission curves — LEE Filters
+
+<https://leefilters.com/colour/>  
+Copyright: Panavision (LEE Filters)
+
+The percentage of light each of eight gels passes, every 5 nm from 400 to 700 nm: 106 Primary Red, 139 Primary Green, 119 Dark Blue, 132 Medium Blue, 120 Deep Blue, 101 Yellow, 105 Orange and 020 Medium Amber. They were read on 2026-11-16 from the graph data on each filter's page (https://leefilters.com/colour/106-primary-red/, and the same pattern for the others) and committed unedited as tools/data/lee_gels.csv (sha256 da460f4466fe9094b929b9b0dba50624f18c4e87a06e5722be6961762f6095af, checked before use), with a note beside it (tools/data/README.md). tools/gel_table.py integrates them against a black body and the CIE observer into the colour organ's gel table, source/GelTable.h, which is compiled into the plugin, and the gel menu uses LEE's numbers and names. LEE's pages state no licence for the data (the site's footer says only "Copyright Panavision"), so it is credited here as LEE's published data.
+
 ## Work we checked ourselves against
 
 No code was taken from these — but they were how we knew we had it right, and that is worth saying out loud.
@@ -84,11 +137,35 @@ W. E. Forsythe and A. G. Worthing, "The Properties of Tungsten and the Character
 
 M. W. Chase, Jr., NIST-JANAF Thermochemical Tables, Fourth Edition, J. Phys. Chem. Ref. Data, Monograph 9 (1998), as the Shomate fit for solid tungsten on the NIST Chemistry WebBook (fetched 2026-09-25), two ranges, 298-1900 K and 1900-3680 K. c_p rises from 0.13 to 0.20 J/(g K) over a filament's range and the filament's heat capacity follows it.
 
-### The CIE 1931 2-degree standard observer — CIE, via the Colour & Vision Research Laboratory (UCL)
+### Colour Organ, Project 428 — Electronics Today International (Australia), November 1974
 
-<http://www.cvrl.org/database/data/cmfs/ciexyz31_1.csv>
+<https://worldradiohistory.com/AUSTRALIA/ETI-Australia/70s/ETI-1974-11.pdf>
 
-The colour-matching functions at 1 nm from 360 to 830 nm (CIE 015:2018; CIE 018:2019, doi:10.25039/CIE.DS.xvudnb9b), committed unedited as tools/data/ciexyz31_1.csv with its SHA-256 checked before use. The Planck table in source/PlanckTable.h is computed from it by tools/planck_table.py, and the harness integrates its own locus from the same file.
+Pages 77-81. The colour organ is modelled on this circuit: its band split (red up to the A an octave below middle C, green over the next three octaves, then blue, which give the 220 Hz and 1760 Hz defaults), the half-wave diode detector with each channel's printed parts (10k into the node, 100k discharging it, 1.0 uF on the red channel and 0.47 uF on the others, so releases of 100 ms and 47 ms), and the trigger: a constant-current ramp, reset at every mains zero crossing, whose slope the detector sets and which fires each lamp's triac. No text or drawing of it is reproduced; source/Organ.{h,cpp} models it from the schematic and the parts list, and the harness holds those part values itself.
+
+### Psychedelia I — D. Lancaster, Popular Electronics, September 1969
+
+<https://worldradiohistory.com/Archive-Poptronics/60s/69/Pop-1969-09.pdf>
+
+Pages 27-44: the same trigger earlier, a control voltage setting a ramp's rate, the ramp reset at every line zero crossing and the triac turning off as the line passes through zero; and coloured lamps behind a diffuser. Read to confirm ETI 428's trigger is the period's; no code.
+
+### Audio EQ Cookbook — W3C Note, 8 June 2021, ed. R. Toy, after R. Bristow-Johnson
+
+<https://www.w3.org/TR/audio-eq-cookbook/>
+
+The low-pass and high-pass biquad coefficients and the bilinear prewarping the colour organ's crossover is built from (source/Organ.cpp), as Linkwitz-Riley second-order sections of Q 0.5.
+
+### Linkwitz-Riley crossovers — S. Linkwitz, "Active Filters" (linkwitzlab.com), and D. Bohn, RaneNote 160 (2005)
+
+<https://www.linkwitzlab.com/filters.htm>
+
+The second-order Linkwitz-Riley alignment (Q 0.5, each output 6 dB down at the corner, the outputs summing flat), which the crossover uses and which the harness's --crossover check holds its -6.02 dB corners to.
+
+### The RMS of a phase-cut sine — Monolithic Power Systems, MPScholar, "Single-Phase AC/AC Converters"; H. F. Ifech, University of Anbar, Power Electronics ch. 5
+
+<https://www.monolithicpower.com/en/learning/mpscholar/power-electronics/ac-ac-converters/single-phase-ac-ac-converters>
+
+The closed form 1 - a/pi + sin 2a / 2pi for a lamp's RMS squared at firing angle a, measured from the zero crossing, which the harness's --firing check compares the organ's lamps against. No code; the shader integrates the cut sine itself.
 
 ## Inspirations
 
