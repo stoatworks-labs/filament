@@ -2,3 +2,7 @@
 # shader copies still match the plugin's; wrangler would otherwise upload it and
 # serve it, which is neither useful nor anybody's business.
 tools/
+# Nor is wasm/: the glue the WebAssembly is built from and the manifest of what
+# went in (demo/tools/build-wasm.sh). The built filament-organ.js and .wasm are
+# served; their sources are not.
+wasm/

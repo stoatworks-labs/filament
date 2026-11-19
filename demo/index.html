@@ -4,15 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Filament — browser demo | Stoatworks Labs</title>
-    <meta name="description" content="Try the Filament FFGL plugin for Resolume in your browser: the picture on a wall of incandescent bulbs, each a tungsten filament with its own heat balance. The plugin's own drive, thermal, bloom and output shaders ported to WebGL2, so the filaments' ODE runs on your GPU; the clock, the lamp sizing, the substep rule and the control laws are a hand port to JavaScript." />
+    <meta name="description" content="Try the Filament FFGL plugin for Resolume in your browser: the picture on a wall of incandescent bulbs, each a tungsten filament with its own heat balance, and a 1970s colour organ that fires them from the music. The plugin's own shaders in WebGL2, so the filaments' ODE runs on your GPU, and the organ's own C++ in WebAssembly, fed a generated test track, never a microphone; the clock, the lamp sizing, the substep rule and the control laws are a hand port to JavaScript." />
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./vendor/kit.css" />
+    <link rel="stylesheet" href="./filament.css" />
     <link rel="canonical" href="https://filament-demo.stoatworks-labs.com/" />
     <meta name="project-page" content="https://stoatworks-labs.com/software/filament/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Stoatworks Labs" />
     <meta property="og:title" content="Filament — browser demo | Stoatworks Labs" />
-    <meta property="og:description" content="Try the Filament FFGL plugin for Resolume in your browser: the picture on a wall of incandescent bulbs, each a tungsten filament with its own heat balance. The plugin's own drive, thermal, bloom and output shaders ported to WebGL2, so the filaments' ODE runs on your GPU; the clock, the lamp sizing, the substep rule and the control laws are a hand port to JavaScript." />
+    <meta property="og:description" content="Try the Filament FFGL plugin for Resolume in your browser: the picture on a wall of incandescent bulbs, each a tungsten filament with its own heat balance, and a 1970s colour organ that fires them from the music. The plugin's own shaders in WebGL2, so the filaments' ODE runs on your GPU, and the organ's own C++ in WebAssembly, fed a generated test track, never a microphone; the clock, the lamp sizing, the substep rule and the control laws are a hand port to JavaScript." />
     <meta property="og:url" content="https://filament-demo.stoatworks-labs.com/" />
     <meta property="og:image" content="https://stoatworks-labs.com/thumbs/filament.png" />
     <meta property="og:image:width" content="1280" />
@@ -21,6 +22,19 @@
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
+    <section class="fi-warning" id="photosensitivity" aria-labelledby="fi-warning-title">
+      <h2 class="fi-warning__title" id="fi-warning-title">Photosensitivity warning</h2>
+      <p>
+        The colour organ's lamps pump with the music: bright, whole-lamp swings at the beat
+        that can exceed three flashes a second at high gain. Flashing light can trigger
+        seizures in people with photosensitive epilepsy.
+      </p>
+      <p>
+        This page opens with the <strong>Organ</strong> Off, as the plugin does; the organ's
+        presets switch it on. <strong>Pause</strong>, under the picture, stops it at once.
+      </p>
+    </section>
+
     <main id="demo">
       <noscript>
         <h1>Filament</h1>
@@ -34,12 +48,15 @@
           capacity, solved per bulb on the GPU through the mains waveform and a
           sine, square-law or triac dimmer. Dimmed bulbs go red as well as dark,
           flashes come up fast and die away slowly, cold bulbs surge, small
-          lamps ripple at twice the mains, and big lamps lag.
+          lamps ripple at twice the mains, and big lamps lag. Its colour organ
+          turns the wall into a 1970s three-channel light box: the music's bass,
+          mid and treble each fire a triac per bulb behind its own gel.
         </p>
         <p>
-          This demo runs the plugin's shaders in your browser, so it needs
-          JavaScript and WebGL2. The plugin itself, its source and its downloads
-          are on
+          This demo runs the plugin's shaders, and its colour organ's own C++
+          compiled to WebAssembly, in your browser, so it needs JavaScript and
+          WebGL2. The organ hears a generated test track, never a microphone.
+          The plugin itself, its source and its downloads are on
           <a href="https://github.com/stoatworks-labs/filament">its repository</a>.
         </p>
         <ul>
@@ -56,7 +73,7 @@
       defer
       data-app="Filament"
       data-repo="https://github.com/stoatworks-labs/filament"
-      data-note="A browser demo of the plugin's shaders and a port of its clock, its lamp sizing, its substep rule and its control laws. Nothing you load here leaves your machine."
+      data-note="A browser demo of the plugin's shaders, its colour organ's own C++ in WebAssembly, and a port of its clock, its lamp sizing, its substep rule and its control laws. It never uses a microphone, and nothing you load here leaves your machine."
     ></script>
   </body>
 </html>

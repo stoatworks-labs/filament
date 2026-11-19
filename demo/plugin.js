@@ -52,6 +52,24 @@
  *   surface, and 15% of the rated power conducted. They size the wire, and so
  *   set the time scale; nothing else.
  *
+ * ------------------------------------------------------------- the colour organ
+ *
+ * v0.2.0's Organ: three lamps per cell behind red, green and blue gels, each
+ * on its own triac, fired by the bass, mid and treble of the music the way
+ * ETI's Project 428 (1974) fires them. Off by default, as in the plugin,
+ * and with it Off this page is v0.1.0's: demo/organ.js is not even fetched,
+ * and no organ pass runs. Switched On, the page loads organ.js and, through
+ * it, filament-organ.wasm -- the plugin's own source/Organ.cpp and earshot,
+ * compiled unmodified (demo/tools/build-wasm.sh) -- and runs the organ's
+ * half of ProcessOpenGL: the half-cycle numbering, the tag, the ramps, their
+ * regrid and their clear, the three-target organ pass and the status lamp,
+ * ported here by hand like the rest of ProcessOpenGL. The organ's GLSL and
+ * the gel table are spliced into organ.js by the same script. The music is
+ * the plugin's harness's, fed through earshot's feed(); there is no
+ * microphone and no device (organ.js says how). Until the module has loaded
+ * the frames are drawn as with the Organ Off: the plugin's ensureOrgan is
+ * synchronous and this is a fetch, which the line under the picture reports.
+ *
  * ------------------------------------------------------------- the buffers
  *
  * Per bulb (the grid's raster, never the output's): two RGBA32F state buffers
@@ -889,6 +907,36 @@ const PLANCK_TABLE = [
   1.49851698, 0.906627547, 0.457653702, 2.9290335, // 3700 K
 ];
 
+// source/Organ.h: the colour organ's constants -- the grid, the circuit, the
+// control ranges -- each `kName` written ORGAN_kName, so an expression of another
+// reads as JavaScript.
+const ORGAN_kTapRate = 32000;
+const ORGAN_kIntervals = 16;
+const ORGAN_kRowPoints = ORGAN_kIntervals + 1;
+const ORGAN_kMaxRows = 64;
+const ORGAN_kQ = 0.5;
+const ORGAN_kDcBlockHertz = 10.0;
+const ORGAN_kChargeOhms = 10.0e3;
+const ORGAN_kDischargeOhms = 100.0e3;
+const ORGAN_kReserveSeconds = 0.030;
+const ORGAN_kExcessSeconds = 0.120;
+const ORGAN_kLowMinHertz = 40.0;
+const ORGAN_kLowMaxHertz = 500.0;
+const ORGAN_kHighMinHertz = 500.0;
+const ORGAN_kHighMaxHertz = 8000.0;
+const ORGAN_kGainMinDb = -12.0;
+const ORGAN_kGainMaxDb = 60.0;
+const ORGAN_kSwitchCount = 2;
+const ORGAN_kInputSlots = 16;
+const ORGAN_kRing = 4096;
+const ORGAN_kDetectorFarads = [1.0e-6, 0.47e-6, 0.47e-6];
+// source/Organ.cpp's SwitchName (Organ, Status Lamp) and source/GelTable.h's kNames
+// (Bass, Mid and Treble Gel): the organ's menus, in element order.
+const SWITCH_NAMES = ['Off', 'On'];
+const GEL_NAMES = ['106 Primary Red', '139 Primary Green', '119 Dark Blue', '132 Medium Blue', '120 Deep Blue', '101 Yellow', '105 Orange', '020 Medium Amber', 'Clear'];
+// source/Filament.cpp: the organ ramps' half-cycle tags are taken modulo this.
+const FILAMENT_kTagModulus = 2 ** 22;
+
 //=== END GENERATED
 
 /// Shaders.cpp's `assemble`: the version line, the filament library for the
@@ -940,6 +988,19 @@ const amount = (value) => clamp01f(value);
 const glassFrosted = (index) => index === 1;
 const mainsHertz = (index) => (clampTo(index, 0, CONTROLS_H.kMainsCount - 1) === 1 ? 60.0 : 50.0);
 const optionIndex = (value, count) => clampTo(lround(f(value)), 0, count - 1);
+
+/// Organ.cpp's control laws, for the readouts and the defaults only: the
+/// organ turns the host's values into hertz and decibels with its own
+/// compiled laws (demo/wasm/glue.cpp's fo_advance), and demo/tools/
+/// crosscheck.py holds these to those. Crossover Low: 40 to 500 Hz,
+/// geometric; Crossover High: 500 to 8000 Hz, geometric; each Gain: -12 to
+/// +60 dB of voltage, linear.
+const crossoverLowHertz = (value) => ORGAN_kLowMinHertz * Math.pow(ORGAN_kLowMaxHertz / ORGAN_kLowMinHertz, clamp01f(value));
+const crossoverLowParam = (hertz) => clamp01f(f(Math.log(hertz / ORGAN_kLowMinHertz) / Math.log(ORGAN_kLowMaxHertz / ORGAN_kLowMinHertz)));
+const crossoverHighHertz = (value) => ORGAN_kHighMinHertz * Math.pow(ORGAN_kHighMaxHertz / ORGAN_kHighMinHertz, clamp01f(value));
+const crossoverHighParam = (hertz) => clamp01f(f(Math.log(hertz / ORGAN_kHighMinHertz) / Math.log(ORGAN_kHighMaxHertz / ORGAN_kHighMinHertz)));
+const gainDb = (value) => ORGAN_kGainMinDb + (ORGAN_kGainMaxDb - ORGAN_kGainMinDb) * clamp01f(value);
+const gainParam = (db) => clamp01f(f((db - ORGAN_kGainMinDb) / (ORGAN_kGainMaxDb - ORGAN_kGainMinDb)));
 
 //===========================================================================
 // Lamp.cpp, ported. The lamp as numbers, in double. The constants and tables
@@ -1020,7 +1081,75 @@ const telemetry = {
   ticked: false,
   now: 0, dt: 0, substeps: 0, h: 0, phase0: 0,
   columns: 0, rows: 0, lamp: null, stiffness: 0, regrids: 0,
+  organ: 'off', organError: null, organRows: 0, organFirstHalf: 0,
 };
+
+//===========================================================================
+// What the organ hears: the page's stand-in for the plugin's Audio Input and
+// Rescan Inputs. No microphone and no device, ever: nothing here or in
+// organ.js asks the browser for one, and the WebAssembly has no capture
+// backend. The organ is fed through earshot's feed() as the plugin's harness
+// feeds it (fitest's sources; `source` is glue.cpp's fo_source).
+//===========================================================================
+
+const FEED_RATE = 48000; // fitest's Audio::rate; a file is decoded to it
+const FILE_SECONDS = 120; // the most of a file the page keeps (the rest is dropped, and the note says so)
+
+const AUDIO = [
+  {
+    id: 'track', name: 'Test track (generated, 120 BPM)', source: 1,
+    hint: 'The plugin’s harness’s own music, generated in the WebAssembly by fitest’s own functions (tools/fitest/Organ.inc’s trackAt, copied character for character): a kick on every beat at 120 BPM, a 55 Hz bass note on every off-beat, an A major chord every two seconds and a closed hat on every eighth, at 48 kHz on both channels. Synthesised, not a recording of anyone’s music. Fed through earshot’s feed() as a device’s samples would arrive. Not played aloud.',
+  },
+  {
+    id: 'silence', name: 'Silence (zeros fed)', source: 2,
+    hint: 'fitest --silent: exact zeros through feed(). After three seconds earshot calls the input Silent and the status lamp goes steady red, as it would for an input macOS is handing silence. The organ’s lamps stay dark.',
+  },
+  {
+    id: 'none', name: 'None (nothing fed)', source: 0,
+    hint: 'Nothing reaches earshot at all: the plugin with its Audio Input at None, its own default. The status lamp is amber and the organ’s lamps stay dark.',
+  },
+  {
+    id: 'file', name: 'Your audio file', source: 3,
+    hint: 'A file you choose, decoded in this page by the browser and fed through feed(), looped, as fitest --wav plays a WAV. It is not uploaded and not played aloud.',
+  },
+];
+const audioById = (id) => AUDIO.find((a) => a.id === id);
+const pageQuery = new URLSearchParams(window.location.search);
+const audio = {
+  id: AUDIO.some((a) => a.id === pageQuery.get('audio') && a.id !== 'file') ? pageQuery.get('audio') : 'track',
+  file: null, // { name, samples (interleaved stereo), frames, rate, channels, sourceChannels, seconds, cut }
+  epoch: 0, // bumped for every file chosen: a new organ
+};
+/// What organ.js's feeder is handed: a new key is a new organ.
+const audioChoice = () => {
+  const a = audioById(audio.id) ?? AUDIO[0];
+  return { key: a.id === 'file' ? `file#${audio.epoch}` : a.id, source: a.source, file: a.id === 'file' ? audio.file : null };
+};
+
+/**
+ * Decode a file the visitor chose. An OfflineAudioContext renders to memory,
+ * not to an output device, and decodeAudioData resamples to its 48 kHz. A mono
+ * file goes to both channels; of more than two, the first two are kept.
+ * Nothing leaves the page and nothing is played.
+ */
+async function decodeFile(file) {
+  const bytes = await file.arrayBuffer();
+  const context = new OfflineAudioContext(2, 1, FEED_RATE);
+  const buffer = await context.decodeAudioData(bytes);
+  if (!buffer.length) throw new Error('it holds no samples');
+  const left = buffer.getChannelData(0);
+  const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+  const frames = Math.min(buffer.length, FILE_SECONDS * FEED_RATE);
+  const samples = new Float32Array(2 * frames);
+  for (let i = 0; i < frames; i += 1) {
+    samples[2 * i] = left[i];
+    samples[2 * i + 1] = right[i];
+  }
+  return {
+    name: file.name, samples, frames, rate: FEED_RATE, channels: 2,
+    sourceChannels: buffer.numberOfChannels, seconds: frames / FEED_RATE, cut: buffer.length > frames,
+  };
+}
 
 /// Driven checks only (see AGENTS.md, "The browser demo"): `afterRender`, if
 /// set, is called at the end of each render with the context and the input,
@@ -1074,6 +1203,52 @@ function createRenderer(gl, quad) {
   let stiff = 0.0;
   let mrtChecked = false;
 
+  //--- The colour organ's members --------------------------------------------
+  // The ramps: each lamp's control integral at the last frame's end and its
+  // half-cycle's tag, ping-ponged at the grid's raster (RGBA32F, Nearest).
+  const ramp = [new PassBuffer(gl, nearest), new PassBuffer(gl, nearest)];
+  let rampCurrent = 0;
+  let rampFresh = true;
+  // organReady / organFailed, as Filament's; `organ` is what organ.js built
+  // (its GL side and its WebAssembly), loaded on the first frame the Organ is
+  // On and never before.
+  let organ = null;
+  let organLoading = false;
+  let organFailed = false;
+
+  /// Filament::ensureOrgan. The plugin's is synchronous; this one starts a
+  /// fetch and answers false until it has finished, so the frames in between
+  /// are drawn as with the Organ Off (the line under the picture says so). A
+  /// failure keeps the organ off and says why, as the plugin logs it.
+  function ensureOrgan() {
+    if (organ) return true;
+    if (organFailed) return false;
+    if (!organLoading) {
+      organLoading = true;
+      telemetry.organ = 'loading';
+      import('./organ.js')
+        .then((m) => m.createOrgan(gl, quad, {
+          version: K_VERSION, filament: FILAMENT, vertex: VERTEX,
+          constants: { rowPoints: ORGAN_kRowPoints, maxRows: ORGAN_kMaxRows, intervals: ORGAN_kIntervals },
+        }))
+        .then((built) => {
+          organ = built;
+          rampFresh = true;
+          telemetry.organ = 'ready';
+          window.__filamentDemo?.demo?.redraw();
+        })
+        .catch((error) => {
+          organFailed = true;
+          telemetry.organ = 'failed';
+          telemetry.organError = error;
+          // eslint-disable-next-line no-console
+          console.error(error);
+        })
+        .finally(() => { organLoading = false; });
+    }
+    return false;
+  }
+
   function setFilamentUniforms(shader, law, ambient) {
     shader.setArray('Rho', rhoF, 1);
     shader.setArray('ShomateLow', lowF, 1);
@@ -1103,7 +1278,15 @@ function createRenderer(gl, quad) {
     current = 0;
     lastNow = -1.0;
     lampKey = '';
+    // A new instance's organ: no ramps, and a new organ::Organ (and feeder)
+    // on its first organ frame. The compiled programs and the module are kept.
+    for (const b of ramp) b.dispose();
+    rampCurrent = 0;
+    rampFresh = true;
+    organ?.cpu.reset();
   };
+  /// Driven checks only: the organ, once built, for its rows and its state.
+  hooks.organ = () => organ;
 
   return {
     render({ input, params, width: vpW, height: vpH, time }) {
@@ -1139,6 +1322,14 @@ function createRenderer(gl, quad) {
       const bloom = amount(p('bloom'));
       const exposure = f(f(MODEL_H.kExposureGain) * f(Math.pow(2.0, exposureStops(p('exposure')))));
       const mixAmount = amount(p('mix'));
+
+      // The colour organ, on the first frame it is asked for and not before:
+      // with it off, nothing below touches the WebAssembly or the organ's GL.
+      const organOn = optionIndex(p('organ'), ORGAN_kSwitchCount) === 1 && ensureOrgan();
+      if (!organOn) {
+        organ?.cpu.off();
+        rampFresh = true;
+      }
 
       // The lamp, and how finely its ODE has to be stepped: recomputed only
       // when something it depends on moves (the stiffness scans the range).
@@ -1182,6 +1373,22 @@ function createRenderer(gl, quad) {
         unbind(0);
         current = 1 - current;
         telemetry.regrids += 1;
+
+        // The organ's ramps carry across too, the same way.
+        const rampLive = ramp[rampCurrent];
+        const rampOther = ramp[1 - rampCurrent];
+        if (organOn && !rampFresh && isValid(rampLive)) {
+          rampOther.ensure(columns, rows, gl.RGBA32F);
+          rampOther.bind();
+          regridShader.use();
+          bindTexture(gl, 0, rampLive.texture);
+          regridShader.setSampler('State', 0);
+          regridShader.set('OldGrid', oldColumns, oldRows);
+          regridShader.set('NewGrid', columns, rows);
+          quad.draw();
+          unbind(0);
+          rampCurrent = 1 - rampCurrent;
+        }
       }
 
       const src = state[current];
@@ -1191,6 +1398,21 @@ function createRenderer(gl, quad) {
       light.ensure(columns, rows, gl.RGBA32F);
       bloomX.ensure(columns, rows, gl.RGBA16F);
       bloomY.ensure(columns, rows, gl.RGBA16F);
+      if (organOn) {
+        // The ramps live at the grid's raster. A new allocation, or a first
+        // use, starts every ramp at "no half-cycle yet" (tag -1).
+        const rampLive = ramp[rampCurrent];
+        const kept = isValid(rampLive) && rampLive.width === columns && rampLive.height === rows;
+        for (const b of ramp) b.ensure(columns, rows, gl.RGBA32F);
+        rampFresh = rampFresh || !kept;
+        if (rampFresh) {
+          for (const b of ramp) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, b.fbo);
+            gl.clearBufferfv(gl.COLOR, 0, [0.0, 0.0, 0.0, -1.0]);
+          }
+          rampFresh = false;
+        }
+      }
 
       if (fill) {
         src.bind();
@@ -1213,11 +1435,83 @@ function createRenderer(gl, quad) {
       unbind(0);
 
       //------------------------------------------------------------------
+      // The organ's audio, on the CPU (the plugin's C++, in the
+      // WebAssembly): every sample of the frame through the crossover and
+      // the detectors, then each half-cycle's control integral, to a texture
+      // the organ's thermal pass searches.
+      //------------------------------------------------------------------
+      let tag0 = 0.0;
+      let controlRows = 0;
+      if (organOn) {
+        organ.cpu.feed(audioChoice());
+        // The half-cycles exactly as the shader will number them: from the
+        // float Phase0 it is handed, so a row is never a half-cycle off.
+        const phase0f = f(phase0);
+        const cycle = Math.floor(start * hertz);
+        const firstHalf = 2 * cycle + Math.floor(2.0 * phase0f);
+        const cyclesF = f(h * hertz) * substeps;
+        const halves = Math.trunc(Math.floor(2.0 * (phase0f + cyclesF)) - Math.floor(2.0 * phase0f)) + 2;
+        // The host's floats for the five laws; the glue applies Organ.cpp's.
+        controlRows = organ.cpu.frame({
+          start, now, hertz, firstHalf, halves,
+          values: {
+            low: f(p('crossoverLow')), high: f(p('crossoverHigh')),
+            bass: f(p('bassGain')), mid: f(p('midGain')), treble: f(p('trebleGain')),
+          },
+        });
+        organ.gl.upload(organ.cpu.rows(), controlRows);
+        tag0 = f(((firstHalf % FILAMENT_kTagModulus) + FILAMENT_kTagModulus) % FILAMENT_kTagModulus);
+        telemetry.organFirstHalf = firstHalf;
+      }
+      telemetry.organRows = controlRows;
+
+      //------------------------------------------------------------------
       // 2. Thermal: the ODE over the frame, to the other state buffer and the
       // light buffer at once -- the light attached as a second colour target
       // on the state buffer's framebuffer, as the plugin attaches it to the
       // SDK's, and taken off again afterwards.
       //------------------------------------------------------------------
+      // The organ has its own pass (three filaments, the triacs and the
+      // gels), writing the ramps as a third target; the v0.1.0 pass below
+      // is untouched.
+      if (organOn) {
+        const rampOut = ramp[1 - rampCurrent];
+        gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, light.texture, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, rampOut.texture, 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+        gl.viewport(0, 0, dst.width, dst.height);
+        const s = organ.gl.organShader.use();
+        bindTexture(gl, 0, src.texture);
+        bindTexture(gl, 1, drive.texture);
+        bindTexture(gl, 2, planckTexture);
+        bindTexture(gl, 3, ramp[rampCurrent].texture);
+        bindTexture(gl, 4, organ.gl.controlTexture);
+        bindTexture(gl, 5, organ.gl.gelTexture);
+        setFilamentUniforms(s, law, ambient);
+        s.setSampler('State', 0);
+        s.setSampler('Drive', 1);
+        s.setSampler('Planck', 2);
+        s.setSampler('Ramp', 3);
+        s.setSampler('Control', 4);
+        s.setSampler('Gels', 5);
+        s.setInt('Substeps', substeps);
+        s.set('StepSeconds', h);
+        s.set('StepCycles', h * hertz);
+        s.set('Phase0', phase0);
+        s.set('Tag0', tag0);
+        s.setInt('Rows', controlRows);
+        gl.uniform3i(s.location('GelIndex'),
+          optionIndex(p('bassGel'), GEL_NAMES.length),
+          optionIndex(p('midGel'), GEL_NAMES.length),
+          optionIndex(p('trebleGel'), GEL_NAMES.length));
+        quad.draw();
+        unbind(5, 4, 3, 2, 1, 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, null, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, null, 0);
+        rampCurrent = 1 - rampCurrent;
+      } else {
       gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, light.texture, 0);
       gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
@@ -1247,6 +1541,7 @@ function createRenderer(gl, quad) {
       // Leave the framebuffer as it was made: one target.
       gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, null, 0);
+      }
       current = 1 - current;
       const latest = state[current];
 
@@ -1288,7 +1583,8 @@ function createRenderer(gl, quad) {
       outputShader.set('Size', vpW, vpH);
       outputShader.set('Gap', gap);
       outputShader.setInt('PixelMode', pixelMode ? 1 : 0);
-      outputShader.setInt('Frosted', glassFrosted(glass) ? 1 : 0);
+      // The organ's lamps sit behind a frosted panel, whatever the Glass.
+      outputShader.setInt('Frosted', organOn || glassFrosted(glass) ? 1 : 0);
       outputShader.set('Glass', tint[0], tint[1], tint[2]);
       outputShader.set('Glow', glow);
       outputShader.set('BloomAmount', bloom);
@@ -1300,6 +1596,10 @@ function createRenderer(gl, quad) {
       outputShader.setInt('Gels', gels);
       gl.disable(gl.BLEND);
       quad.draw();
+
+      if (organOn && optionIndex(p('statusLamp'), ORGAN_kSwitchCount) === 1) {
+        organ.gl.drawStatusLamp(organ.cpu.lamp(), [0, 0, vpW, vpH], now);
+      }
 
       telemetry.ticked = true;
       telemetry.now = now;
@@ -1313,6 +1613,8 @@ function createRenderer(gl, quad) {
       telemetry.stiffness = stiff;
       telemetry.law = law;
       telemetry.gels = gels;
+      telemetry.organOn = organOn;
+      telemetry.organWanted = optionIndex(p('organ'), ORGAN_kSwitchCount) === 1;
 
       if (hooks.afterRender) hooks.afterRender(gl, input);
       unbind(4, 3, 2, 1, 0);
@@ -1360,7 +1662,7 @@ const demo = mountDemo({
   pluginId: 'FI01',
   kind: 'effect',
   tagline:
-    'The picture on a wall of incandescent bulbs. Each bulb is a tungsten filament whose dimmer is set by its cell of the clip, and whose temperature follows the filament’s own heat balance: power in through a resistance that rises fifteenfold from cold, out by radiation as T⁴ and by conduction. Dim a bulb and it goes red as well as dark; a flash rises fast and falls slowly; a cold bulb surges; a small filament flickers at twice the mains. The light is Planck’s law at the filament’s temperature through the CIE observer.',
+    'The picture on a wall of incandescent bulbs. Each bulb is a tungsten filament whose dimmer is set by its cell of the clip, and whose temperature follows the filament’s own heat balance: power in through a resistance that rises fifteenfold from cold, out by radiation as T⁴ and by conduction. Dim a bulb and it goes red as well as dark; a flash rises fast and falls slowly; a cold bulb surges; a small filament flickers at twice the mains. The light is Planck’s law at the filament’s temperature through the CIE observer. Switch the Organ on and the wall becomes a 1970s three-channel colour organ: the music’s bass, mid and treble each fire a triac per bulb behind its own gel, and the filaments pump with the beat.',
   repo: 'https://github.com/stoatworks-labs/filament',
   page: 'https://stoatworks-labs.com/software/filament/',
 
@@ -1368,7 +1670,7 @@ const demo = mountDemo({
   // the physics runs in the plugin's shaders, but the clock, the lamp sizing
   // and the substep rule are a hand port, and three constants are assumptions.
   blurb:
-    'It is Filament’s own GLSL — the drive, thermal, bloom and output passes and the filament library they share — ported from the repository to WebGL2, so the heat balance itself runs on your GPU as it does in the plugin: RK4 substeps, tungsten’s resistivity table, its heat capacity, the mains waveform through the dimmer and the Planck colour table, over a float temperature per bulb carried from frame to frame. The CPU half — the clock and the mains phase, the lamp’s wire sized from its wattage, the substep rule and every control’s law — is ported to JavaScript by hand, and nothing checks that port but a reader. The emissivity (0.30), the coil radiating from half its surface and the 15% conducted are the plugin’s assumptions, not measurements. It runs on generated clips in this page, with the plugin’s own parameters and no install.',
+    'It is Filament’s own GLSL — the drive, thermal, bloom and output passes and the filament library they share, and the colour organ’s own pass and gel table — ported from the repository to WebGL2, so the heat balance itself runs on your GPU as it does in the plugin: RK4 substeps, tungsten’s resistivity table, its heat capacity, the mains waveform through the dimmer and the Planck colour table, over a float temperature per bulb carried from frame to frame. The colour organ’s audio half is the plugin’s own C++ (its crossover, ETI 428’s detectors and the half-cycle grid, with the earshot audio library under it), compiled unmodified to WebAssembly. It never uses a microphone: it hears a generated test track (or silence, or a file of yours) fed through earshot’s feed() as the plugin’s test harness feeds it, where the plugin listens to an audio input. The rest of the CPU half — the clock and the mains phase, the lamp’s wire sized from its wattage, the substep rule, every control’s law and the organ’s half of the frame — is ported to JavaScript by hand, and nothing checks that port but a reader. The emissivity (0.30), the coil radiating from half its surface and the 15% conducted are the plugin’s assumptions, not measurements. It runs on generated clips in this page, with the plugin’s own parameters and no install.',
 
   // Every per-bulb buffer is a float render target, as in the plugin.
   needFloat: true,
@@ -1415,6 +1717,39 @@ const demo = mountDemo({
     std('mix', 'Mix', 1.0, 'Look', {
       hint: 'The wall against the input. Alpha is mix(source alpha, 1, Mix): the wall paints the whole frame, so it is opaque at 1.',
     }),
+
+    // v0.2.0's colour organ, after About in the plugin (ids are never
+    // renumbered); About is not on the page. Audio Input and Rescan Inputs are
+    // the host row's Audio menu under the picture: no device exists here.
+    opt('organ', 'Organ', SWITCH_NAMES, 0, 'Organ',
+      'Off: the plugin as v0.1.0, and this page as before (nothing of the organ is loaded or run). On: a 1970s three-channel colour organ. The music (the host row’s Audio, under the picture) goes through a passive three-way crossover into bass, mid and treble; each band through a diode and a capacitor into a control voltage, which sets how early in every mains half-cycle a triac fires its lamp. Every bulb holds three filaments, one per channel, each behind its gel, and is drawn frosted; the cell’s brightness sets how strongly it answers. The lamps can flash with the beat: see the note at the top.'),
+    std('crossoverLow', 'Crossover Low', crossoverLowParam(220.0), 'Organ', {
+      display: (v) => `${crossoverLowHertz(v).toFixed(0)} Hz`,
+      hint: '40 to 500 Hz, geometric; default 220 Hz. Bass is below it. A second-order Linkwitz–Riley filter, 6 dB down at its corner. ETI’s 1974 Project 428 split: up to the A below middle C.',
+    }),
+    std('crossoverHigh', 'Crossover High', crossoverHighParam(1760.0), 'Organ', {
+      display: (v) => `${crossoverHighHertz(v).toFixed(0)} Hz`,
+      hint: '500 to 8000 Hz, geometric; default 1760 Hz, three octaves above Crossover Low’s default. Mid is between the two, treble above.',
+    }),
+    std('bassGain', 'Bass Gain', gainParam(48.0), 'Organ', {
+      display: (v) => `${signed(gainDb(v), 1)} dB`,
+      hint: '−12 to +60 dB of voltage, linear; default +48 dB. How much of the bass reaches its triac: more fires it earlier in each half-cycle, so the lamp runs hotter.',
+    }),
+    std('midGain', 'Mid Gain', gainParam(51.0), 'Organ', {
+      display: (v) => `${signed(gainDb(v), 1)} dB`,
+      hint: '−12 to +60 dB of voltage, linear; default +51 dB.',
+    }),
+    std('trebleGain', 'Treble Gain', gainParam(46.0), 'Organ', {
+      display: (v) => `${signed(gainDb(v), 1)} dB`,
+      hint: '−12 to +60 dB of voltage, linear; default +46 dB.',
+    }),
+    opt('bassGel', 'Bass Gel', GEL_NAMES, 0, 'Organ',
+      'The gel in front of the bass lamps, from LEE’s published transmission curves (source/GelTable.h): a black body at the filament’s temperature through the gel. Where channels fire together their colours add.'),
+    opt('midGel', 'Mid Gel', GEL_NAMES, 1, 'Organ', 'The gel in front of the mid lamps.'),
+    opt('trebleGel', 'Treble Gel', GEL_NAMES, 2, 'Organ',
+      'The gel in front of the treble lamps. 119 Dark Blue passes about a fifth of the light 106 Primary Red does from a tungsten filament.'),
+    opt('statusLamp', 'Status Lamp', SWITCH_NAMES, 1, 'Organ',
+      'A small disc in the top-right corner of the output while the Organ is On: amber, nothing to listen to (Audio None); green, audio is arriving; steady red, the input is open but exactly silent (Audio Silence, after three seconds); blinking red, the chosen device is missing or refused (never on this page: there are no devices).'),
   ],
 
   // Lights on black shows the physics best: a light that arrives lights its
@@ -1435,6 +1770,10 @@ const demo = mountDemo({
     'Pixel Mode, fine grid': { pixelMode: 1, gap: 0.1, columns: integerIndex('columns', 96), rows: integerIndex('rows', 54) },
     'Big wall, 160 × 90': { columns: integerIndex('columns', 160), rows: integerIndex('rows', 90), gap: 0.2 },
     'Few big bulbs, 16 × 9': { columns: integerIndex('columns', 16), rows: integerIndex('rows', 9) },
+    // The colour organ. Each flashes with the beat: see the note at the top.
+    'Colour organ (on the test track)': { organ: 1 },
+    'Colour organ, 16 × 9 big bulbs': { organ: 1, columns: integerIndex('columns', 16), rows: integerIndex('rows', 9) },
+    'Colour organ, 150 W lamps (slower)': { organ: 1, wattage: wattsParam(150.0) },
   },
 
   differences: [
@@ -1448,6 +1787,10 @@ const demo = mountDemo({
     'The plugin stores each host value as a float; the page’s sliders are doubles, so every value is rounded through Math.fround before its law is applied, and the defaults are the plugin’s float defaults (Wattage 0.30103, which is 40 W).',
     'Output alpha is mix(source alpha, 1, Mix), as in the plugin: opaque at Mix 1. The page has no backdrop menu, so at Mix below 1 on the transparency clip the transparent area shows the page’s black.',
     'The harness-only Perturb and Probe uniforms are set to what the shipped plugin sets them to, 0. The six negative controls and the raw temperature probes fitest reads through them are not on this page. The About block is absent, as on every page in this suite.',
+    'The colour organ’s audio half is the plugin’s own C++, not a port: source/Organ.cpp (the FIFO that lays the audio onto the host’s clock, the 10 Hz DC block, the Linkwitz–Riley crossover, ETI 428’s detectors, the grid of 1/16 half-cycles and their control integrals, the status lamp’s state and the control laws) and the earshot snapshot under it, compiled unmodified to filament-organ.wasm by demo/tools/build-wasm.sh, with earshot built without any capture backend. demo/tools/check_shaders.py fails if any file that went in has changed since. WebAssembly has no fused multiply-add and its sin, exp and pow are musl’s, not Apple’s, so its doubles need not match the Mac’s bit for bit. Compared once against a native build of the same C++ on the same audio, every row of every frame was bit-identical, and the picture matched the plugin’s own harness to within one code value (AGENTS.md has the record).',
+    'There is no microphone and no audio device: nothing on this page asks for one, and the WebAssembly could not open one. The plugin listens to an Audio Input; this page feeds the organ through earshot’s feed(), as the plugin’s test harness does, from the host row’s Audio menu under the picture, which stands in for Audio Input and Rescan Inputs: the harness’s own generated test track (120 BPM: kick, bass, an A major chord, hats; synthesised, nobody’s recording), exact zeros, nothing at all (the plugin’s None), or a file of yours decoded in the page (the first two minutes, looped; never uploaded). Nothing is played aloud. The music is laid on the page’s clock, so pausing pauses it; Restart sends the clock back and the organ lays the stream onto it again, as the plugin does for a host clock that jumps. Choosing another Audio starts a new organ, as choosing another Audio Input restarts the plugin’s stream.',
+    'The organ’s GLSL — its library, its thermal pass (three filaments per bulb, each triac’s firing found in the control integral, the exact energy of the phase-cut sine in each RK4 substep, the light through the gels) and the status lamp — and the 9 × 346-row gel table from LEE’s spectra are spliced in from the repository and checked like the rest. The organ’s half of ProcessOpenGL is a hand port: the half-cycle numbering from the float phase, the ramp tags modulo 2²², the ramps’ clear, regrid and ping-pong, the three-target pass, Frosted forced on, and the status lamp’s colours, size, place, blend and scissor. The organ pass writes three RGBA32F targets at once, and the organ stays off, saying why, in a browser that will not.',
+    'With the Organ Off the page is v0.1.0’s, bit for bit: the organ’s script and WebAssembly are not fetched and no organ pass runs. Switched On, the plugin builds its organ on that frame; the page has to fetch it first, so the frames until it arrives (a moment, once) are drawn as with the Organ Off, and the line under the picture says so.',
     'The plugin’s proof — a constant RMS settling at the power balance (2800 K at rated), the light on the Planckian locus and redward as it dims, a cold start following R(T) (t90 65 ms for 60 W), switch-off following T⁴ plus conduction, triac ripple at exactly twice the mains and bigger on a small lamp, temperatures surviving a resize and a regrid — is an offline harness in the repository, at two rasters and on a software renderer. Nothing on this page measures anything; the line under the picture reports what the ported lamp and substep rule are doing.',
   ],
 
@@ -1456,29 +1799,179 @@ const demo = mountDemo({
 
 // For a driven check (AGENTS.md, "The browser demo"): the kit's state and
 // redraw, the telemetry, and the hooks, so a script can pause, set the clock
-// to n / 60 and render one frame at a time, as `fitest --pipe --fps 60` does.
-window.__filamentDemo = { demo, telemetry, hooks };
+// to n / 60 and render one frame at a time, as `fitest --pipe --fps 60` does;
+// the Audio choice and the organ's control laws, for demo/tools/crosscheck.py.
+window.__filamentDemo = {
+  demo, telemetry, hooks, audio, AUDIO,
+  laws: { crossoverLowHertz, crossoverLowParam, crossoverHighHertz, crossoverHighParam, gainDb, gainParam },
+};
+
+const embedded = (() => {
+  const q = new URLSearchParams(window.location.search);
+  return q.has('embed') && q.get('embed') !== '0';
+})();
+
+if (demo && !embedded) {
+  // Copy link carries the Audio choice (a file cannot travel in a link).
+  const toQuery = demo.params.toQuery?.bind(demo.params);
+  if (toQuery) {
+    demo.params.toQuery = () => {
+      const q = toQuery();
+      if (audio.id !== 'track' && audio.id !== 'file') q.set('audio', audio.id);
+      return q;
+    };
+  }
+
+  // The kit's note says every declared parameter is here; three are not.
+  const note = document.querySelector('.inspector__note');
+  if (note) {
+    note.textContent += ' Left out here: the Organ’s Audio Input and Rescan Inputs (no audio device exists on this page; the host row’s Audio menu under the picture stands in for both) and the About block.';
+  }
+  buildHostRow();
+  buildStatusLines();
+}
 
 //---------------------------------------------------------------------------
-// Under the canvas: a line reporting what the ported lamp and substep rule are
-// doing. Skipped in embed mode, where there is no reader.
+// The host row: the stand-in for what Resolume's audio input would hand the
+// organ. Not a plugin control.
 //---------------------------------------------------------------------------
-if (demo && !new URLSearchParams(window.location.search).has('embed')) {
-  const stage = document.querySelector('.stage');
-  if (stage) {
-    const line = document.createElement('p');
-    line.className = 'stage__status';
-    stage.append(line);
-    setInterval(() => {
-      if (!telemetry.ticked || !telemetry.lamp) return;
-      const t = telemetry;
-      const lampNow = t.lamp;
-      line.textContent =
-        `Lamp: ${lampNow.watts < 100 ? lampNow.watts.toFixed(1) : lampNow.watts.toFixed(0)} W at ${lampNow.volts.toFixed(0)} V ${lampNow.hertz.toFixed(0)} Hz, `
-        + `a wire ${(lampNow.diameter * 1e6).toFixed(1)} µm × ${lampNow.length.toFixed(2)} m, ${(lampNow.mass * 1e6).toFixed(2)} mg; `
-        + `stiffness ${t.stiffness.toFixed(0)}/s. This frame: ${t.dt.toFixed(4)} s in ${t.substeps} RK4 substep${t.substeps === 1 ? '' : 's'}`
-        + `${t.substeps ? ` of ${(t.h * 1000).toFixed(3)} ms` : ' (a stopped clock shows the instant)'}, mains phase ${t.phase0.toFixed(3)} cycles at its start; `
-        + `${t.columns} × ${t.rows} = ${t.columns * t.rows} bulbs${t.gels === 1 ? ' × 3 gelled filaments' : ''}, ${DIMMER_NAMES[t.law]} dimmers; clock ${t.now.toFixed(3)} s.`;
-    }, 250);
+function field(label, control, title) {
+  const wrap = document.createElement('label');
+  wrap.className = 'transport__field';
+  if (title) wrap.title = title;
+  const span = document.createElement('span');
+  span.className = 'transport__label';
+  span.textContent = label;
+  // Narrow screens: the field may shrink, and the control with it.
+  wrap.style.maxWidth = '100%';
+  wrap.style.minWidth = '0';
+  control.style.maxWidth = '100%';
+  control.style.minWidth = '0';
+  wrap.append(span, control);
+  return wrap;
+}
+
+function buildHostRow() {
+  const transport = document.querySelector('.transport');
+  if (!transport) return;
+  const row = document.createElement('div');
+  row.className = 'transport';
+  row.id = 'filament-host';
+  const tag = document.createElement('span');
+  tag.className = 'transport__label';
+  tag.textContent = 'The host:';
+  tag.title = 'The stand-in for what Resolume’s audio input would hand the plugin. Not a plugin control.';
+
+  const select = document.createElement('select');
+  select.className = 'transport__select';
+  select.id = 'filament-audio';
+  for (const a of AUDIO) {
+    const option = new Option(a.name, a.id);
+    option.title = a.hint;
+    if (a.id === 'file') option.disabled = true;
+    select.append(option);
   }
+  select.value = audio.id;
+  select.addEventListener('change', () => {
+    audio.id = select.value;
+    demo.redraw();
+  });
+
+  const pick = document.createElement('label');
+  pick.className = 'btn transport__file';
+  pick.id = 'filament-audio-file-label';
+  pick.textContent = 'Audio file…';
+  pick.title = 'Choose a sound file on this machine. The browser decodes it here and the page feeds it to the organ through feed(); it is not uploaded and not played aloud.';
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'audio/*';
+  input.id = 'filament-audio-file';
+  input.hidden = true;
+  pick.append(input);
+  const fileNote = document.createElement('span');
+  fileNote.className = 'transport__label';
+  fileNote.id = 'filament-audio-note';
+  fileNote.setAttribute('role', 'status');
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    fileNote.textContent = `Decoding ${file.name}…`;
+    try {
+      audio.file = await decodeFile(file);
+      audio.epoch += 1;
+      const fileOption = [...select.options].find((o) => o.value === 'file');
+      fileOption.disabled = false;
+      fileOption.textContent = `Your file: ${file.name}`;
+      audio.id = 'file';
+      select.value = 'file';
+      const f = audio.file;
+      fileNote.textContent = `${file.name}: ${f.cut ? `the first ${FILE_SECONDS} s` : `${f.seconds.toFixed(1)} s`}, `
+        + `${f.sourceChannels === 1 ? 'mono, on both channels' : f.sourceChannels === 2 ? 'stereo' : `${f.sourceChannels} channels, the first two`}, at 48 kHz, looped. It stays in this page.`;
+      demo.redraw();
+    } catch (error) {
+      fileNote.textContent = `That file could not be decoded: ${error.message ?? error}`;
+    }
+  });
+
+  row.append(
+    tag,
+    field('Audio', select, 'What the colour organ hears, in place of the plugin’s Audio Input: the plugin’s harness’s generated test track, silence, nothing, or a file of yours, fed through earshot’s feed() as the harness feeds it. No microphone, no device. A new choice starts a new organ.'),
+    pick,
+    fileNote,
+  );
+  transport.after(row);
+}
+
+//---------------------------------------------------------------------------
+// Under the canvas: a line reporting what the ported lamp and substep rule
+// are doing, and one for the organ while it is On, through the accessors the
+// plugin's harness reads. They report; they measure nothing. Skipped in embed
+// mode, where there is no reader.
+//---------------------------------------------------------------------------
+function buildStatusLines() {
+  const stage = document.querySelector('.stage');
+  if (!stage) return;
+  const line = document.createElement('p');
+  line.className = 'stage__status';
+  const organLine = document.createElement('p');
+  organLine.className = 'stage__status fi-organ';
+  organLine.id = 'filament-organ-status';
+  organLine.hidden = true;
+  stage.append(line, organLine);
+  setInterval(() => {
+    if (!telemetry.ticked || !telemetry.lamp) return;
+    const t = telemetry;
+    const lampNow = t.lamp;
+    const filaments = t.organOn ? ' × 3 filaments behind the organ’s gels, on triacs the organ fires' : `${t.gels === 1 ? ' × 3 gelled filaments' : ''}, ${DIMMER_NAMES[t.law]} dimmers`;
+    line.textContent =
+      `Lamp: ${lampNow.watts < 100 ? lampNow.watts.toFixed(1) : lampNow.watts.toFixed(0)} W at ${lampNow.volts.toFixed(0)} V ${lampNow.hertz.toFixed(0)} Hz, `
+      + `a wire ${(lampNow.diameter * 1e6).toFixed(1)} µm × ${lampNow.length.toFixed(2)} m, ${(lampNow.mass * 1e6).toFixed(2)} mg; `
+      + `stiffness ${t.stiffness.toFixed(0)}/s. This frame: ${t.dt.toFixed(4)} s in ${t.substeps} RK4 substep${t.substeps === 1 ? '' : 's'}`
+      + `${t.substeps ? ` of ${(t.h * 1000).toFixed(3)} ms` : ' (a stopped clock shows the instant)'}, mains phase ${t.phase0.toFixed(3)} cycles at its start; `
+      + `${t.columns} × ${t.rows} = ${t.columns * t.rows} bulbs${filaments}; clock ${t.now.toFixed(3)} s.`;
+
+    organLine.hidden = !t.organWanted;
+    if (!t.organWanted) return;
+    if (t.organ === 'failed') {
+      organLine.className = 'stage__status fi-organ is-error';
+      organLine.textContent = `Organ: it could not start here, so the wall is drawn as with the Organ Off. ${t.organError?.message ?? t.organError}`;
+      return;
+    }
+    organLine.className = 'stage__status fi-organ';
+    const built = hooks.organ?.();
+    if (!t.organOn || !built) {
+      organLine.textContent = 'Organ: loading the plugin’s organ (filament-organ.wasm)… until it arrives the wall is drawn as with the Organ Off.';
+      return;
+    }
+    const s = built.cpu.stats();
+    const c = built.cpu.counters();
+    const heard = audioById(audio.id) ?? AUDIO[0];
+    const what = heard.id === 'file' ? `your file (${audio.file?.name})` : heard.id === 'track' ? 'the test track' : heard.id === 'silence' ? 'zeros' : 'nothing (Audio None)';
+    organLine.textContent = s
+      ? `Organ: ${what}${heard.id === 'none' ? ' is fed' : ` through earshot’s feed(), ${s.fed.toFixed(2)} s so far`}; earshot ${s.state}${s.tapRate ? `, its tap at ${(s.tapRate / 1000).toFixed(0)} kHz` : ''}; `
+        + `the status lamp ${built.lampWords[built.cpu.lamp()]}; ${t.organRows} half-cycle row${t.organRows === 1 ? '' : 's'} this frame; `
+        + `FIFO ${s.underruns.toLocaleString('en-GB')} samples short and ${s.dropped.toLocaleString('en-GB')} dropped since this organ began; `
+        + `audio devices opened: ${c.selects} (there are none here to open).`
+      : 'Organ: waiting for its first frame.';
+  }, 250);
 }

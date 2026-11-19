@@ -27,7 +27,10 @@
 #                 and glslc accept some (`packed`) that Mesa refuses.
 #   demo          the browser demo's copy of every shader, and of the tables
 #                 it hands them, is still the plugin's, character for character
-#                 (demo/tools/check_shaders.py). Says nothing about the page's
+#                 (demo/tools/check_shaders.py), the colour organ's included;
+#                 its WebAssembly (the organ's C++) was built from the sources
+#                 as they are now; the music it feeds is fitest's; and no served
+#                 file names a microphone API. Says nothing about the page's
 #                 hand PORT of the CPU half; only a reader checks that.
 #   physics       every harness check, at TWO rasters: 320x180, which is what
 #                 CI renders at, and 1280x720. Each reads the plugin's own
@@ -202,19 +205,25 @@ rm -rf "$dir"
 
 #---------------------------------------------------------------------------
 # The browser demo's copy of every shader, and of the lamp's tables and the
-# Planck table it hands them, is the plugin's, character for character. A
-# drifted comment counts. A shader change here means
-# `python3 demo/tools/sync_shaders.py`, never a hand edit of demo/plugin.js.
-# It says nothing about the page's PORT of the CPU half; only a reader checks
-# that.
+# Planck table it hands them, is the plugin's, character for character, and
+# so are the colour organ's passes and gel table in demo/organ.js. A drifted
+# comment counts. A shader change here means
+# `python3 demo/tools/sync_shaders.py`, never a hand edit of demo/plugin.js
+# or demo/organ.js. The organ's audio half on the page is source/Organ.cpp
+# and earshot compiled to demo/filament-organ.wasm: a change to any file that
+# went in (demo/wasm/inputs.sha256) means `demo/tools/build-wasm.sh` (needs
+# emscripten). The check also holds the glue's music to tools/fitest/Organ.inc
+# and fails if a served file names getUserMedia, enumerateDevices or
+# mediaDevices. It says nothing about the page's PORT of the CPU half; only a
+# reader checks that.
 #---------------------------------------------------------------------------
 step "demo shaders"
 if [ -f demo/tools/check_shaders.py ]; then
 	if out=$(python3 demo/tools/check_shaders.py 2>&1); then
 		pass "$( printf '%s\n' "$out" | tail -1 )"
 	else
-		fail "the demo's shaders or tables have drifted from source/ -- run: python3 demo/tools/sync_shaders.py"
-		printf '%s\n' "$out" | tail -12
+		fail "the demo has drifted from source/ -- run: python3 demo/tools/sync_shaders.py (shaders, tables) or demo/tools/build-wasm.sh (the organ's .wasm)"
+		printf '%s\n' "$out" | grep -v '^ok ' | tail -12
 	fi
 else
 	printf '   skipped: no demo/\n'

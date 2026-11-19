@@ -473,9 +473,9 @@ harness's printed resistor names have changed.
 `demo/` is the page at **filament-demo.stoatworks-labs.com** (2026-09-25), on the
 fleet's kit (`stoatworks-backend/resolume-demo`, vendored by its `sync.sh`).
 
-**The colour organ is not on the page.** Its two programs (`OrganThermal`, `StatusLamp`)
-are not spliced, the page has no audio input, and nothing under `demo/` changed with it.
-`check_shaders.py` still holds the shared pieces to the C++.
+**The colour organ is on the page** (2026-11-19, v0.2.0), Off by default as in the plugin;
+"The colour organ on the page" below says what runs and how it was checked. With the
+Organ Off the page is v0.1.0's, bit for bit.
 
 **What is the plugin's.** Every GLSL string of `Shaders.cpp` — the version line, the
 vertex body, `kFilament` and the six pass bodies — is spliced into `demo/plugin.js` by
@@ -512,6 +512,95 @@ the same 31 input frames read back from the page: at frames 1, 5 and 30, and for
 stops, every pixel within 1/255. Through ANGLE on Metal, 1 to 3 channel values of
 1.56 million differ, by 1; through SwiftShader, up to 11 235, by 1. The Wattage control
 moves the picture (frame 5, 40 W against 1000 W: mean |difference| 41 levels).
+
+### The colour organ on the page (2026-11-19)
+
+**What is the plugin's.** The organ's audio half is `source/Organ.cpp` and `Diag.cpp`
+with earshot 8124191 under it, unpatched, compiled by `demo/tools/build-wasm.sh`
+(emscripten 6.0.5, `-O3 -DNDEBUG`, earshot as its CMake builds it with
+`EARSHOT_CAPTURE=OFF`: `NoCapture.cpp`, no miniaudio) to `demo/filament-organ.wasm`
+(222,244 bytes) and `filament-organ.js` (14,800), both committed: the deploy has no build
+step. `demo/wasm/glue.cpp` exposes the calls ProcessOpenGL makes (`Activate`,
+`Deactivate`, `Advance` with Settings filled by Organ.cpp's own laws) and the harness's
+feeder. `demo/wasm/inputs.sha256` hashes the 33 inputs the compiler's dependency files name, the
+build script and both outputs; `check_shaders.py` fails when any has changed, or an earshot source has
+appeared, since. Rebuilt from the same inputs it gave the same bytes. `sync_shaders.py`
+splices `kOrgan`, `kOrganThermalBody`, `kStatusLampBody` and `GelTable.h`'s 9 x 346 rows
+into `demo/organ.js`, and Organ.h's constants, the Off/On and gel menus and the tag
+modulus into plugin.js's block; `check_shaders.py` holds them as it holds the rest.
+
+**What is a hand port:** `ensureOrgan`'s two textures, `drawStatusLamp` (colours, size,
+place, blend, scissor) in `organ.js`, and the organ's half of `ProcessOpenGL` in
+`plugin.js`: the half-cycle numbering from the float phase, `halves`, the tag modulo
+2^22, the ramps (cleared to (0, 0, 0, -1), regridded, ping-ponged), the three-target
+pass, Frosted forced on. Organ.cpp's laws are ported too, for the readouts and defaults
+only; the organ itself is handed the host's floats and applies the compiled laws.
+
+**Decisions:**
+- **No microphone, ever.** Nothing served names `getUserMedia`, `enumerateDevices` or
+  `mediaDevices` (`check_shaders.py` greps for them), the module has no capture backend,
+  and `fo_prepare` sets `FILAMENT_NO_DEVICES=1`, so the organ's menu is built with no
+  devices (`Calls().lists` counts that build, not an OS enumeration) and `selectDevice` is
+  never called. The music reaches the organ through earshot's `feed()` as fitest feeds
+  it: `noiseAt`, `trackAt`, `Wav`, `kFeedLead` and `Audio` are `tools/fitest/Organ.inc`'s,
+  copied verbatim and held to it by `check_shaders.py`. The host row's **Audio** menu
+  stands in for Audio Input and Rescan Inputs: the generated test track (default), zeros
+  (`--silent`), nothing (the plugin's None: amber lamp), or a file the visitor chooses,
+  decoded by an `OfflineAudioContext` at 48 kHz, cut at 120 s, looped (`--wav`). Nothing is
+  played aloud. The page says all of this in its banner, the Audio menu's hints and its
+  differences.
+- **The music follows the page's clock**, fed before each organ frame up to its end plus
+  10 ms, so a paused page feeds nothing. A new Audio choice is a new `organ::Organ` and a
+  new feeder. Restart (a backward clock) keeps the organ, which re-anchors its stream as
+  for any host clock that jumps; the feeder is re-anchored with fitest's own `off()`, so
+  the music carries on where it stopped.
+- **The organ is fetched on the first frame it is asked for**: `plugin.js` imports
+  `organ.js`, which loads the module. The plugin's `ensureOrgan` is synchronous; until
+  the fetch lands the frames are drawn as with the Organ Off, and the line under the
+  picture says so. A failure (a browser that will not render three RGBA32F targets, a
+  module that will not compile) keeps the organ off and says why.
+- **Defaults are the plugin's**, Organ Off included; the brief's rule that a demo opens
+  on its plugin's defaults beats showing the new mode first. Three presets switch it on.
+- **A photosensitivity note heads the page** (`#photosensitivity`, styled in
+  `demo/filament.css`, hidden under `?embed=1`, millpond's shape). Its wording was the
+  release agent's provisional line, as no measured wording had reached the demo by the
+  time it landed: replace it with the release's flash-survey figures when there are
+  some.
+- **CSP**: `_headers` adds `'wasm-unsafe-eval'` to `script-src` (production only: a local
+  server ignores `_headers`). `.assetsignore` keeps `demo/wasm/` (the glue and manifest)
+  off the site; the built `.js` and `.wasm` are served.
+
+**Measured once (2026-11-19)** by `demo/tools/crosscheck.py --fitest build/fitest` (not in
+verify.sh: it needs a GPU, Chrome and clang), headless Chrome on ANGLE Metal, M4 Max, the
+Colour bars clip at 960x540, driven frame by frame at n / 60 from `hooks.fresh()`:
+- **Organ Off is v0.1.0's.** This page against `demo/` before the organ came to it, the
+  Organ Off: defaults, 1000 W, 10 W on a triac with RGB gels behind frosted glass at
+  64x32, and Pixel Mode at 60 Hz +1.6 stops, at frames 1, 5 and 30: 0 bytes differ. No
+  `organ.js` or `.wasm` was fetched.
+- **The rows are the C++'s, bit for bit.** Every organ frame's arguments and rows,
+  recorded from the page and replayed through `demo/tools/organ_rows.cpp` (the same
+  Organ.cpp, earshot and glue.cpp, built with the Mac's clang at `-O3`): 121 frames of the
+  defaults (30,192 floats), 91 at 16 x 9 and 150 W (22,712), 61 with other gels, +60 dB,
+  100 Hz / 4 kHz and 60 Hz mains (16,592), 200 of silence (49,844): every float
+  bit-identical, every lamp state and first half-cycle the same. WebAssembly needed no
+  allowance here, though it has no fused multiply-add and its libm is musl's.
+- **fitest's trace agrees as printed.** `fitest --out --trace` (the real plugin, fed by
+  the same feeder) against the same per-frame firing angles and controls computed from
+  the page's rows: all 473 frames identical at fitest's precision, 268 of them with a
+  triac fired (none on silence).
+- **The picture agrees with `fitest --pipe`.** Fed the page's input frame (the clip is
+  still: checked), the defaults case setting only `Organ=1` so the plugin's constructor
+  defaults meet the page's: at every frame compared (1, 5, 30, 60, 90, 120 across the
+  four cases) at most 1 code, on at most 27 of 1.56 million values; on silence, the steady red lamp included, 0. Bass Gain one slider step (0.001)
+  off moves 247,161 values, mean 0.175 against 1.3e-6.
+- **The laws.** The page's ports against the compiled laws in its own module over 1001
+  host floats: the gain readouts all identical, each crossover readout 1000 of 1001 (the
+  other within 2e-16 relative), every inverse identical, and the five defaults equal to
+  Organ.cpp's as floats.
+- The page logged no error or WebGL warning. By hand: the Audio menu's None (amber),
+  Silence (steady red after 3 s), a 130 s generated tone file (cut to 120 s, green),
+  Restart mid-file, the Organ back Off, `?embed=1&organ=1&audio=silence`, and 375 px
+  wide with no sideways scroll.
 
 Deploy: `cf-run npx wrangler deploy` from the repo root, or push to main
 (`.github/workflows/deploy.yml`). The host is a Worker **route** over a proxied
