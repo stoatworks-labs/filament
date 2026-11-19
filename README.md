@@ -3,8 +3,9 @@
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. In Resolume Arena 7.29.0 on macOS it
 > registers with every control and renders the wall, and with the colour organ Off it draws what
-> v0.1.0 draws; the organ has never listened to a live device there. On Windows v0.1.0 passed the
-> fleet's Arena gate in Resolume Arena 7.27.1 on software rendering. Everything else is measured
+> v0.1.0 draws; the organ has never listened to a live device there. On Windows v0.1.0 and the
+> v0.2.0 release DLL pass the fleet's Arena gate in Resolume Arena 7.27.1 on software rendering,
+> with no sound device. Everything else is measured
 > by an offline harness that drives the plugin class itself, reads each bulb's temperature back through the
 > plugin's own probes, and sets it against the heat-balance equation solved independently in
 > double: a filament at rated voltage settles at 2800 K to within 0.06 K, its light sits on the
