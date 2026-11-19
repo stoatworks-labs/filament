@@ -11,7 +11,8 @@ anybody this works.
 The picture on a wall of incandescent bulbs, as an FFGL 2.1 effect (`FI01`, shown as
 `SW Filament`) for Resolume Arena and Avenue. C++17 + GLSL 4.10, CMake, universal macOS
 `.bundle` and (in CI) a Windows `.dll`. MIT, at
-`github.com/stoatworks-labs/filament`. Released v0.1.0 on 2026-09-25.
+`github.com/stoatworks-labs/filament`. Released v0.1.0 on 2026-09-25, and v0.2.0, which
+adds the colour organ, on 2026-11-19.
 
 Built 2026-09-25 in one session (tranche five) from `specs/SPEC-filament.md` and the
 fleet's templates: wetplate for the plugin shape, the harness, the generated table with
@@ -21,7 +22,7 @@ resize-mid-run trap; afterglow and needle for the idea of state that decays by i
 physics rather than by a tuned constant.
 
 **The colour organ** (parameters 19–30, Off by default) was added on 2026-11-16 on branch
-`claude/organ` from `91bef09`, after v0.1.0, and is unreleased. It has its own section
+`claude/organ` from `91bef09`, after v0.1.0, and released in v0.2.0. It has its own section
 below. Its spec, with a source for every physical claim, is
 `~/Projects/resolume/specs/SPEC-filament-organ.md`. `SPEC-filament.md` is unchanged.
 
@@ -562,10 +563,12 @@ only; the organ itself is handed the host's floats and applies the compiled laws
 - **Defaults are the plugin's**, Organ Off included; the brief's rule that a demo opens
   on its plugin's defaults beats showing the new mode first. Three presets switch it on.
 - **A photosensitivity note heads the page** (`#photosensitivity`, styled in
-  `demo/filament.css`, hidden under `?embed=1`, millpond's shape). Its wording was the
-  release agent's provisional line, as no measured wording had reached the demo by the
-  time it landed: replace it with the release's flash-survey figures when there are
-  some.
+  `demo/filament.css`, hidden under `?embed=1`, millpond's shape). Its figures are
+  v0.2.0's flash survey (2026-11-19, the fleet's flashcheck rule, whole frame and every
+  third-of-frame window, 60 fps, 15 s): the page's three organ presets on fitest's test
+  track over Beat 001, 003 and 005 at most 2.5 flashes a second; the plugin over
+  Resolume's 18 demo loops with their own audio at most 2.5 / 3 at the defaults, 3.5 with
+  every Gain at +60 dB, 4 with 10 W as well (the guide's Photosensitivity table).
 - **CSP**: `_headers` adds `'wasm-unsafe-eval'` to `script-src` (production only: a local
   server ignores `_headers`). `.assetsignore` keeps `demo/wasm/` (the glue and manifest)
   off the site; the built `.js` and `.wasm` are served.
@@ -785,8 +788,18 @@ renderer:
 
 ### Assumed, or not done
 
-- ☠️ **Never loaded into Resolume on macOS.** Everything numeric was compiled, rendered and
-  measured offline against the real plugin class in a headless CGL context, plus an `oxbow` load.
+- **macOS, in Resolume Arena 7.29.0** (rev 33052, this Mac, 2026-11-19, over REST on a
+  still card; v0.1.0's release bundle, then a universal Release build of the v0.2.0 tree):
+  v0.2.0 registers as `SW Filament` with Opacity and 31 params, the 12 organ params among
+  them, defaults and options as declared, About `Filament v0.2.0 - MIT - Stoatworks Labs`.
+  Organ Off, at the defaults, RGB gels, 10 W triac, 160x90, Amber glass and Mix 0.5, v0.2.0
+  sits 0.148, 0.100, 0.489, 0.003, 0.095 and 0.547 levels (mean abs, of 255) from v0.1.0,
+  against v0.1.0's own floor between two snapshots 1.5 s apart of 0.274, 0.861, 0.615,
+  0.112, 0.033 and 0.551 (Amber is 0.095 against 0.033: a tenth of a level, the wall's
+  timing; offline the two are bit-identical). Bare and Mix 0: 0.000. Everything numeric
+  is still measured offline against the real plugin class in a headless CGL context, plus
+  an `oxbow` load. The unlicensed Arena's logo overlay comes and goes over the composition
+  snapshot: mask it and take two agreeing snapshots.
 - **Windows, in Resolume Arena 7.27.1** (win-lab, Mesa llvmpipe, no GPU, 2026-09-25): the DLL
   release.yml built from this source loads from Extra Effects, registers as `SW Filament` /
   `FI01` / effect, all 20 host controls match the declaration
@@ -817,14 +830,21 @@ renderer:
 
 ### The colour organ: not verified
 
-- ☠️ **Never loaded into Resolume** on either platform, and never in the Arena gate.
-  `oxbow` loads the bundle and renders 120 frames with the organ Off; no host has run it
-  On.
+- **In Resolume Arena 7.29.0 on macOS, On with no input only** (2026-11-19): Organ On,
+  Audio Input None, goes dark (frame mean 114.8 → 19.0), the status lamp amber in the
+  top-right corner (mean RGB 214, 132, 11); Status Lamp Off removes it; every Gain at
+  +60 dB, the crossovers at their ends and the gels moved change nothing (0.0). The Audio
+  Input menu lists 16 entries and stayed None; the plugin log lists the devices at Organ
+  On and opens none. It has not been On with an input in any host, and never in the
+  Windows gate with audio.
 - **Never heard a live device.** Every organ check feeds earshot through `feed()` or a
   scripted backend. A real microphone or loopback through CoreAudio, its 30 ms FIFO
   against a real device clock, and its drop and re-anchor paths are untested. So is the
   microphone permission prompt.
-- **MSVC has never compiled earshot or this branch.** Windows is untried.
+- **On Windows the organ is compiled in and has never run.** CI's MSVC build compiles
+  earshot with its miniaudio capture and `Organ.cpp` into `Filament.dll` (first
+  in run 43878568458); nothing guards it out. v0.2.0's Arena gate on win-lab covers its
+  controls, not its audio.
 - **The detector's attack** is not measured by any check, only its release. Nor are the
   rectifier's polarity (the negative swing), the 1/16 slope lag beyond frame-rate
   agreement, or the 10 Hz DC block.
@@ -838,8 +858,9 @@ renderer:
 - **The picture is judged by eye**: the frosted bulb with three gels, the mixes and the
   status lamp's look. The demo pass traced the centre bulb on flat walls and looked at
   five contact sheets. Not every clip was watched through its own video.
-- **`ATTRIBUTIONS.md` does not list earshot, miniaudio, LEE's data or ETI 428 yet.** It is
-  generated from the backend's master lists, which this branch cannot edit.
+- **Credits.** `ATTRIBUTIONS.md` lists earshot, miniaudio inside it, the CIE's CC BY-SA 4.0
+  data and LEE's gel data, ETI 428 and the rest (generated from the backend's master
+  lists, for v0.2.0). `tools/data/README.md` says whose the two data files are.
 
 ---
 
@@ -863,9 +884,6 @@ renderer:
 
 ### The colour organ's open questions
 
-- **Publishing earshot.** `external/earshot/` is a snapshot of a local repo that has never
-  been pushed (`SNAPSHOT`). Merging this branch into this public repo publishes earshot's
-  source, its AGENTS.md and its tests.
 - **No input, no light.** The organ is dark until an Audio Input is chosen, and the default
   is None. earshot's host-FFT fallback gives band levels, not a waveform. It could drive the
   detectors directly, but then the crossover claims would be about a path that isn't

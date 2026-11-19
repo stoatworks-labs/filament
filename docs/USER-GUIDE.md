@@ -17,7 +17,8 @@ offline harness rather than captured from Resolume: a 48 × 27 wall of clear 40 
 square-law dimmers. The bright tiles are filaments near 2800 K, nearly white; the dim ones are
 cooler and so redder; the unlit bulbs are faint discs of glass.*
 
-> **Before you rely on this:** released at **v0.1.0**, and still early days. The filaments are
+> **Before you rely on this:** released at **v0.2.0**, which adds the
+> [colour organ](#the-colour-organ-new-in-v020), and still early days. The filaments are
 > measured rather than just asserted, by a harness that drives the plugin class itself and reads each
 > bulb's temperature back through the plugin's own probes, at two rasters and on a software
 > renderer: at a steady voltage a filament settles where power in balances power out (at rated
@@ -30,17 +31,27 @@ cooler and so redder; the unlit bulbs are faint discs of glass.*
 > deliberately broken models are each shown to fail their check. All 14 controls are shown to
 > change the picture. **The checks verify the stated model, not a real lamp**: three of its
 > constants are assumptions (see Known limits), and no real bulb has been measured against it.
-> It has **never been loaded into Resolume on macOS**. The one host it has run in there is the
-> fleet's own test host, `oxbow`, for 120 frames.
-> On Windows, a build of this source loads, registers and renders in Resolume Arena 7.27.1 on
+> In **Resolume Arena 7.29.0 on macOS**, v0.2.0 registers with every control as declared, and
+> with the colour organ Off it draws what v0.1.0 draws there (within 0.55 levels of 255, inside
+> v0.1.0's own spread between two snapshots); the organ, On with no input, goes dark with its
+> status lamp amber, as it should. The organ has never listened to a live audio device.
+> On Windows, v0.1.0 loads, registers and renders in Resolume Arena 7.27.1 on
 > software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the
 > plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The
 > gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall
 > moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other
-> controls read 10 to 55). Software rendering says nothing about a GPU or about speed.
+> controls read 10 to 55). Software rendering says nothing about a GPU or about speed. v0.2.0's
+> Windows DLL has the colour organ compiled in, and the organ has never run on Windows.
 > Try it on a spare layer before you put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
+
+> **Photosensitivity.** With the colour organ Off the wall flashes only where the clip does. **The
+> organ can flash**: it pumps whole lamps on the kicks and the hi-hats. At its defaults it stayed
+> at or under three flashes a second over the audio of Resolume's 18 demo loops, but with every
+> Gain at its top it crossed the line on one Beat loop, and with a 10 W lamp as well on all six
+> Beat loops over a third of the picture (up to four a second). See [Photosensitivity](#photosensitivity)
+> for the rates, and check your music and settings before you put this in front of an audience.
 
 ---
 
@@ -221,12 +232,13 @@ the whole frame, whatever the clip's alpha. At 0 it's the clip, with the clip's 
 
 ---
 
-## The colour organ (not in v0.1.0)
+## The colour organ (new in v0.2.0)
 
-> **Unreleased.** The colour organ is on the main branch only, and is not in the v0.1.0
-> download. It has never been run inside Resolume and has never listened to a real audio
-> device: every check feeds it recorded or synthetic audio through the audio library's test
-> path. It has not been built for Windows.
+> **New in v0.2.0.** In Resolume Arena 7.29.0 on macOS the organ's 12 controls register as
+> declared, and On with no input it goes dark with the status lamp amber. It has never
+> listened to a real audio device: every check feeds it recorded or synthetic audio through
+> the audio library's test path. It is compiled into the Windows build, and has never run
+> there. **It can flash**: see [Photosensitivity](#photosensitivity).
 
 The **Organ** group, after About, turns the wall into a 1970s three-channel colour organ.
 The music goes through a passive three-way crossover into bass, mid and treble. Each band
@@ -259,7 +271,7 @@ None of what you see is animated by hand. It comes from the circuit and the fila
 
 ### The controls
 
-**Organ** (Off, On; default Off). With it Off, the plugin renders exactly as v0.1.0 does
+**Organ** (Off, On; default Off). With it Off, the plugin renders exactly as v0.1.0 did
 and never touches the audio system.
 
 **Crossover Low** (40 to 500 Hz, default 220) and **Crossover High** (500 to 8000 Hz,
@@ -315,6 +327,38 @@ from a tungsten filament. Try 132 Medium Blue, or raise Treble Gain.
 the audio is held 30 ms before use so that frames never run short of it. A bigger Wattage
 lags more.
 
+### Photosensitivity
+
+People with photosensitive epilepsy can have a seizure from flashing light, and the line that
+broadcast guidance (Ofcom) and web guidance (WCAG 2.x) draw is **no more than three flashes in
+any second** over a large area of the picture. A flash here is a rise and a fall in brightness of
+at least a tenth of white; two make a flash.
+
+Measured from the plugin's own output (the offline harness, 60 fps, 15 seconds) over Resolume's
+18 demo loops, each through its own video with its own audio as Resolume ships it, over the
+whole picture and over every third-of-the-picture patch. The figure is the worst second's
+flashes, whole picture / worst third:
+
+| Loops | Organ Off | Organ at its defaults | every Gain +60 dB | every Gain +60 dB, 10 W |
+| --- | --- | --- | --- | --- |
+| Beat 001 | 0 / 1 | 2.5 / 2.5 | 2.5 / 3 | **3.5 / 4** |
+| Beat 002 | 1 / 3 | 2.5 / 3 | 2 / 3 | 2.5 / **4** |
+| Beat 003 | 0 / 0 | 2 / 2 | **3.5 / 3.5** | **3.5 / 3.5** |
+| Beat 004 | 0 / 0 | 2.5 / 3 | 3 / 3 | 2.5 / **4** |
+| Beat 005 | 0 / 1 | 1 / 2.5 | 2 / 2.5 | 2.5 / **3.5** |
+| Beat 006 | 0 / 0.5 | 2 / 2 | 2.5 / 3 | 2.5 / **3.5** |
+| Bass 001–006, Synth 001–006 | 0 / 0 | 0 / 0 | 0 / at most 1 | 0 / at most 2 |
+
+In bold, over the line. **At the defaults no loop crossed it**, though Beat 002 and Beat 004
+reach it (3) over a third of the picture; Beat 002 does that through the wall with the organ
+Off too, so that one is the clip's own. With every Gain at its top, Beat 003 crossed it over
+the whole picture, and a 10 W lamp as well (it heats and cools faster) took all six Beat loops
+over it in a third of the picture, and two over the whole of it. The Bass and Synth loops are line art and stay almost dark.
+
+Louder, denser music than Resolume's demo loops can flash faster, and so can more gain on one
+band. **Defaults are left as they are**: if you raise the gains or shrink the lamps, check what
+the wall does with your music before an audience sees it.
+
 ---
 
 ## How it works
@@ -363,7 +407,7 @@ RGB gels triple the filaments. The state held is the grid's buffers only, 1.1 MB
 whatever the output resolution. Nothing was timed inside Resolume, and nothing was timed on
 Windows.
 
-With the colour organ on (not in v0.1.0) at the default grid, fed a synthetic track before
+With the colour organ on at the default grid, fed a synthetic track before
 each frame, a frame takes 0.72 ms at 1280 × 720 and 1920 × 1080 and 0.75 ms at 3840 × 2160.
 That includes the organ's audio processing on the CPU. Only the harness's handing over of the
 track is left out.
@@ -434,16 +478,29 @@ clock and the unit the plugin decided it is in, and on every lamp change the wir
   the glass sheen, the glass tints, the gels and the exposure curve. The harness proves each
   control moves the picture; nothing measures how it looks.
 - **The fader is the code value**, not linear light, averaged over the cell.
-- **Never loaded into Resolume on macOS.** Everything numeric was compiled, rendered and measured
-  offline against the plugin class itself in a headless CGL context, plus an `oxbow` load.
+- **In Resolume on macOS, only registered and looked at.** In Arena 7.29.0 every control
+  registers and the wall draws as v0.1.0's does; everything numeric was compiled, rendered and
+  measured offline against the plugin class itself in a headless CGL context, plus an `oxbow`
+  load.
 - **Never seen on camera footage**, only on Resolume's bundled CG loops.
 - **Checked at 320 × 180 and 1280 × 720** in the harness, and only timed at 4K.
 - **On a Mac I've only run it on Apple silicon** (an M4 Max, and CI's macOS runner), although
   the macOS build contains an Intel slice. On Windows, see the note at the top of this guide.
 - **No presets**, no preheat, no lamp-to-lamp variation, and no OpenFX version.
-- **The colour organ** (not in v0.1.0) models a 1974 circuit's printed part values, not a
-  measured light box. Its input filter, ideal diode and trigger are simplifications, which
-  the spec lists. It has never run in Resolume or heard a live device.
+- **The colour organ** models a 1974 circuit's printed part values, not a measured light
+  box. Its input filter, ideal diode and trigger are simplifications, which the spec lists.
+  It has never heard a live device, in Resolume or anywhere, and has never run on Windows.
+- **The organ, released as built, with these left open:**
+  - It's **dark until you choose an Audio Input**; it doesn't fall back on Resolume's own audio
+    analysis, which gives band levels where the crossover and triacs need the waveform.
+  - There's **no preheat** (a Background control holding idle lamps just below glowing), so a
+    channel under half its control is fully dark.
+  - **Frosted is forced** while it's On: Glass's tint applies, its shape doesn't.
+  - **Blue is dim**: 119 Dark Blue passes about a fifth of 106 Primary Red's light on tungsten.
+  - **Line art stays dark**, because each bulb's sensitivity is its cell's brightness.
+  - **The treble holds a glow only on dense hi-hats** at the default 40 W (Beat 002 of the six
+    Beat loops); a bigger lamp holds it longer.
+  - **Dimmer and the wall's Gels do nothing** while it's On.
 - **There is a browser demo** at [filament-demo.stoatworks-labs.com](https://filament-demo.stoatworks-labs.com/).
   It's a port to a web page rather than the plugin: the shaders run in WebGL2, and the time
   bookkeeping and the lamp sizing are rewritten in JavaScript. The page lists what it doesn't

@@ -1,11 +1,11 @@
 # filament
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
-> (Anthropic), directed and reviewed by a human author. It has **never been loaded into
-> Resolume on macOS**; there it's loaded by [oxbow](https://github.com/stoatworks-labs/oxbow),
-> which is a working FFGL host but isn't Resolume. On Windows it passes the fleet's Arena gate
-> in Resolume Arena 7.27.1 on software rendering. Everything else is measured by an offline
-> harness that drives the plugin class itself, reads each bulb's temperature back through the
+> (Anthropic), directed and reviewed by a human author. In Resolume Arena 7.29.0 on macOS it
+> registers with every control and renders the wall, and with the colour organ Off it draws what
+> v0.1.0 draws; the organ has never listened to a live device there. On Windows v0.1.0 passed the
+> fleet's Arena gate in Resolume Arena 7.27.1 on software rendering. Everything else is measured
+> by an offline harness that drives the plugin class itself, reads each bulb's temperature back through the
 > plugin's own probes, and sets it against the heat-balance equation solved independently in
 > double: a filament at rated voltage settles at 2800 K to within 0.06 K, its light sits on the
 > Planckian locus to 1e-6 in xy, and a cold one reaches 90% in 65 ms where a lamp without
@@ -21,6 +21,19 @@ and nobody has to get up a ladder to change the blown ones.
 
 <sub>One frame, rendered by `fitest --pipe`, the offline harness, rather than captured from
 Resolume. Resolume's bundled demo clip Metalive 01 at the defaults.</sub>
+
+> **Photosensitivity.** The colour organ (new in v0.2.0) pumps whole lamps with the music: the
+> bass on the kicks, the treble on the hi-hats. I measured it over the audio of Resolume's
+> eighteen demo clips, each through its own video, counting flashes in the whole frame and in
+> every third of it. At the defaults it stays at or under **three flashes a second**, the line
+> broadcast and web (WCAG) guidance draw: at most 2.5 a second over the whole frame and 3 in a
+> third of it, on the Beat loops (the Bass and Synth loops stay dark). With every Gain at its top
+> (+60 dB) Beat 003 reached **3.5** a second over the whole frame, and with a 10 W lamp as well
+> every Beat loop crossed the line in a third of the frame, up to **4** a second. Louder or busier music
+> than the demo loops can go further. Flashing like that can trigger seizures in people with
+> photosensitive epilepsy. With the organ Off the wall is v0.1.0's. See
+> [Photosensitivity](https://stoatworks-labs.com/software/filament/guide/#photosensitivity) in
+> the guide.
 
 <!-- downloads:start -->
 
@@ -99,7 +112,7 @@ is a black body's; real tungsten is a little bluer. The shapes of the bulbs, the
 the bloom, the glass and the gels are drawn by eye. And thin, dim features in the clip
 vanish, because each bulb sees the average of its whole cell.
 
-## The colour organ (on main, not in a release yet)
+## The colour organ (new in v0.2.0)
 
 A 1970s three-channel colour organ in front of the wall. The music goes through a passive
 three-way crossover (bass, mid, treble), and each band through a diode and a capacitor into
@@ -117,9 +130,11 @@ model does the rest. None of the following is drawn:
   loops it does so on one (Beat 002: 2341–2817 K). On the others it follows the hats.
 
 Turn it on with **Organ → On**, then choose an **Audio Input**. It listens to a microphone
-or a loopback device through earshot, and stays dark until one is chosen. With the organ
-Off, the plugin renders exactly as v0.1.0 did and never touches the audio system.
-AGENTS.md has the circuit as modelled, what is verified and what is not.
+or a loopback device through [earshot](https://github.com/stoatworks-labs/earshot), the
+fleet's audio front end, and stays dark until one is chosen: it doesn't use Resolume's own
+audio analysis. With the organ Off, the plugin renders exactly as v0.1.0 did and never
+touches the audio system. AGENTS.md has the circuit as modelled, what is verified and what
+is not.
 
 ## Controls
 
@@ -128,7 +143,7 @@ AGENTS.md has the circuit as modelled, what is verified and what is not.
 | **Wall** | Columns (4–160), Rows (2–90), Gap, Pixel Mode, Glass (Clear, Frosted, Amber, Red, Green, Blue), Gels (Off, RGB: three filaments per cell behind red, green and blue gels). |
 | **Bulb** | Wattage (10–1000 W), Dimmer (Linear, Square Law, Triac), Mains (50 Hz / 230 V, 60 Hz / 120 V), Ambient Temp (0–200 °C). |
 | **Look** | Glow (the halo from the glass and reflector), Bloom, Exposure (±4 stops), Mix. |
-| **Organ** (unreleased, after About) | Organ (Off, On), Crossover Low (40–500 Hz, default 220), Crossover High (500–8000 Hz, default 1760), Bass, Mid and Treble Gain (−12 to +60 dB), Bass, Mid and Treble Gel (nine LEE gels and Clear; default 106 Primary Red, 139 Primary Green, 119 Dark Blue), Audio Input (remembered by name), Rescan Inputs, Status Lamp. |
+| **Organ** (after About) | Organ (Off, On), Crossover Low (40–500 Hz, default 220), Crossover High (500–8000 Hz, default 1760), Bass, Mid and Treble Gain (−12 to +60 dB), Bass, Mid and Treble Gel (nine LEE gels and Clear; default 106 Primary Red, 139 Primary Green, 119 Dark Blue), Audio Input (remembered by name), Rescan Inputs, Status Lamp. |
 
 The defaults are a 48 × 27 wall of clear 40 W bulbs on 50 Hz square-law dimmers, with a
 modest halo and bloom. Square law because tungsten on a plain voltage dimmer is so
@@ -141,7 +156,9 @@ wall paints the whole frame, whatever the clip's alpha.
 
 ## Status
 
-**v0.1.0, released 25 September 2026, and still early days.** There's a
+**v0.2.0, released 19 November 2026, and still early days.** v0.2.0 adds the
+[colour organ](#the-colour-organ-new-in-v020); with it Off, the plugin draws what v0.1.0
+(25 September 2026) drew. There's a
 [user guide](https://stoatworks-labs.com/software/filament/guide/)
 ([PDF](docs/USER-GUIDE.pdf)) and a [project page](https://stoatworks-labs.com/software/filament/).
 
@@ -184,7 +201,7 @@ Render cost, `fitest --bench` (best of three, `glFinish` both sides, a shared GP
 (percentages of a 60 fps frame). The equation is solved in 34 to 147 substeps a frame,
 depending on the lamp; small lamps need the most.
 
-### The colour organ, measured offline (unreleased)
+### The colour organ, measured offline
 
 `tools/verify.sh` runs these too, at both rasters and on the software renderer. Each reads
 the plugin's own state or picture:
@@ -204,8 +221,8 @@ the plugin's own state or picture:
   144 fps, and with the host's clock 5.8 days in.
 - **Resize.** A resize or a grid change mid-music keeps every filament exactly.
 - **Organ off is v0.1.0.** 13 renders, 30 piped frames and the first 19 parameters are
-  identical to a build of 91bef09. With the organ Off, the real CoreAudio backend sees no
-  engine, no device list and no audio thread.
+  identical to a build of the v0.1.0 tag. With the organ Off, the real CoreAudio backend
+  sees no engine, no device list and no audio thread.
 - **Negative controls and mutants.** Each organ check has a perturbation that makes it
   fail. `tools/mutate.sh` makes 20 one-character mutants of the organ's C++ and GLSL, and
   a check catches all 20. Every swept control moves the picture.
@@ -213,9 +230,29 @@ the plugin's own state or picture:
 Render cost with the organ on, the synthetic track fed before each frame: 0.72 ms at
 1280×720 and 1920×1080, 0.75 ms at 3840×2160 (0.25, 0.26 and 0.39 off).
 
+### In Resolume Arena, on macOS
+
+v0.2.0 (a universal build of the release source) in Resolume Arena 7.29.0 on this Mac,
+driven over Arena's REST API on a still card: it registers as `SW Filament` with Opacity and
+all 31 of its controls, the 12 organ controls among them, with the defaults and options it
+declares, and About reads `Filament v0.2.0`. With the organ Off, six settings (the defaults,
+RGB gels, 10 W on a triac, 160 × 90, Amber glass and Mix 0.5) came out 0.003 to 0.55 levels
+(of 255) from v0.1.0's release bundle at the same settings, against v0.1.0's own spread of
+0.03 to 0.86 between two snapshots 1.5 s apart; Mix 0 is the bare clip exactly. Organ On with
+Audio Input None goes dark (the frame's mean 115 → 19) with the status lamp amber in the
+top-right corner, and Status Lamp Off takes the lamp away. With no input, every Gain at
++60 dB, the crossovers at their ends and the gels changed change nothing. The Audio Input
+menu lists the Mac's inputs and stayed on None: no device was opened, so the organ has not
+heard live audio in Arena.
+
 ### In Resolume Arena, on Windows
 
-A build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
+v0.1.0: a build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU), with every control matching what the plugin declares and all 14 moving the picture, in the fleet's Arena gate (9 of 9 checks). The gate's picture is a still, so Wattage, Mains and Ambient Temp, which act mostly on how the wall moves, read weakly there (about 4.6 to 5 levels against a noise floor of 1.1, where the other controls read 10 to 55); software rendering says nothing about a GPU or about speed.
+
+v0.2.0: the colour organ is compiled into the Windows DLL (CI's MSVC build compiles
+earshot, miniaudio and the organ), and it has never run on Windows. The release's own DLL
+goes through the same gate, with the organ's rows added, after the tag; the result will be
+here.
 
 ### What filming the release video found
 
@@ -226,12 +263,30 @@ it; a Linear dimmer leaves only the highlights (a face's mean 52 → 25); behind
 blue is nearly dark; and the mains ripple is averaged away by a 30 fps shutter, so the video
 doesn't show it (the harness measures it).
 
+### Open questions about the organ
+
+Released as built, with these left open:
+
+- **No input, no light.** The organ is dark until an Audio Input is chosen, and the default is
+  None. It doesn't fall back on Resolume's own audio analysis: that gives band levels, and the
+  organ's crossover and triacs need the waveform.
+- **No preheat.** There's no Background control holding idle lamps just below glowing, as
+  most period organs had, so a channel under half its control is fully dark.
+- **Frosted is forced** while the organ is On; Glass's tint is kept, its shape isn't.
+- **Blue is dim.** 119 Dark Blue passes about a fifth of 106 Primary Red's luminance on
+  tungsten, by LEE's own transmission data.
+- **Line art stays dark.** Each bulb's sensitivity is its cell's brightness, so Resolume's Bass
+  and Synth clips (lines on black) barely light at the defaults.
+- **The treble holds a glow only on dense hi-hats** (one Beat clip of six) with the default
+  40 W lamp; a bigger lamp would hold it longer.
+- **Dimmer and the wall's Gels do nothing** while the organ is On: its triacs and gels replace
+  them.
+
 ### Not done
 
-- **Never loaded into Resolume on macOS.**
-- **The colour organ has never been in Resolume at all**, never heard a live audio device
-  (every check feeds the audio in through earshot's test path), and has never been built on
-  Windows.
+- **The colour organ has never heard a live audio device**, in Resolume or anywhere: every
+  check feeds the audio in through earshot's test path. The microphone permission prompt is
+  untested, and the organ has never run on Windows.
 - Seen only on Resolume's bundled demo clips, never on camera footage.
 - No OpenFX port, no factory presets.
 
@@ -239,17 +294,25 @@ doesn't show it (the harness measures it).
 
 [filament-demo.stoatworks-labs.com](https://filament-demo.stoatworks-labs.com/)
 runs the plugin's own shaders in WebGL2 (the drive, thermal, bloom and output
-passes and the filament library they share), spliced in from `source/Shaders.cpp`
-by `demo/tools/sync_shaders.py` and checked character for character, with the
-lamp's tables and the Planck table, by `demo/tools/check_shaders.py` from
-`tools/verify.sh`. So the heat balance runs on the GPU as in the plugin: RK4
-substeps over a float temperature per bulb, ping-ponged. Its CPU half (the clock
-and the mains phase, the lamp's wire sized from its wattage, the substep rule and
-every control's law) is a **hand port to JavaScript**, and nothing checks a port
-but a reader; the emissivity, the radiating fraction and the conducted share are
-the plugin's assumptions there as here. Columns and Rows are dropdowns (the kit
-has no integer control). It's served from `demo/` by this repo's own Worker and
-redeploys on every push to main.
+passes, the colour organ's pass and the filament library they share), spliced in
+from `source/Shaders.cpp` by `demo/tools/sync_shaders.py`.
+`demo/tools/check_shaders.py`, from `tools/verify.sh`, checks them character for
+character, along with the lamp's tables, the Planck table and the gel table. So
+the heat balance runs on the GPU as in the plugin: RK4 substeps over a float
+temperature per bulb, ping-ponged. The colour organ's audio half is the plugin's
+own C++ (`source/Organ.cpp` and earshot) compiled to WebAssembly by
+`demo/tools/build-wasm.sh`, and the same check fails if the `.wasm` was not built
+from the sources as they are. It hears a generated test track (fitest's), silence,
+or a file you pick, which stays in the page: never a microphone. Compared once
+against a native build on the same audio, every row was bit-identical (AGENTS.md).
+The rest of the CPU half (the clock and the mains phase, the lamp's wire sized
+from its wattage, the substep rule, the organ's ramps and status lamp, and every
+control's law) is a **hand port to JavaScript**, and nothing checks a port but a
+reader. The emissivity, the radiating fraction and the conducted share are the
+plugin's assumptions there as here. The page opens with the Organ Off, as the
+plugin does, under a photosensitivity note. Columns and Rows are dropdowns (the
+kit has no integer control). It's served from `demo/` by this repo's own Worker
+and redeploys on every push to main.
 
 ## Build
 
